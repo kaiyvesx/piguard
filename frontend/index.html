@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --primary:    #00c8ff;
+      --secondary:  #0a1628;
+      --accent:     #ff6b35;
+      --success:    #00e676;
+      --warning:    #ffb300;
+      --danger:     #ff3d57;
+      --card-bg:    #0d1e35;
+      --card-border:#1a3050;
+      --text:       #e8f4fd;
+      --muted:      #6b8cae;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: var(--secondary);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── TOP NAV ─── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0 20px;
+      height: 56px;
+      z-index: 1000;
+      flex-shrink: 0;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .logo svg { width: 32px; height: 32px; }
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 6px 16px;
+      width: 320px;
+    }
+    .header-center input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 0.85rem;
+      width: 100%;
+    }
+    .header-center input::placeholder { color: var(--muted); }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .btn-icon {
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 50%;
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .2s;
+    }
+    .btn-icon:hover { border-color: var(--primary); color: var(--primary); }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: .5; transform: scale(1.4); }
+    }
+
+    /* ─── MAIN LAYOUT ─── */
+    .main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ─── LEFT PANEL ─── */
+    .sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      background: var(--card-bg);
+      border-right: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 4px; }
+
+    /* ── Sidebar nav buttons ── */
+    .sidebar-nav {
+      display: flex;
+      gap: 8px;
+      padding: 14px 12px 10px;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .nav-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 10px 4px;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      background: #0a1e36;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all .2s;
+      font-size: 0.62rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      user-select: none;
+    }
+    .nav-btn svg { width: 20px; height: 20px; }
+    .nav-btn:hover { border-color: var(--primary); color: var(--primary); background: #0d2540; }
+    .nav-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: var(--secondary);
+    }
+    .nav-btn.active svg { stroke: var(--secondary); }
+
+    .section-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 14px 16px 6px;
+    }
+
+    /* Trip card */
+    .trip-card {
+      margin: 0 12px 12px;
+      background: linear-gradient(135deg, #0a2040 0%, #0f2d54 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .trip-dest {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .trip-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .trip-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+    .stat {
+      text-align: center;
+      background: rgba(0,200,255,.06);
+      border: 1px solid rgba(0,200,255,.12);
+      border-radius: 8px;
+      padding: 8px 4px;
+    }
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .stat-label {
+      font-size: 0.6rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    /* Speed gauge */
+    .speed-gauge {
+      margin: 0 12px 12px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .gauge-circle {
+      position: relative;
+      width: 72px; height: 72px;
+      flex-shrink: 0;
+    }
+    .gauge-circle svg { transform: rotate(-90deg); }
+    .gauge-bg { fill: none; stroke: #1a3050; stroke-width: 7; }
+    .gauge-fill {
+      fill: none;
+      stroke: var(--primary);
+      stroke-width: 7;
+      stroke-linecap: round;
+      stroke-dasharray: 170;
+      stroke-dashoffset: 170;
+      transition: stroke-dashoffset 1s ease;
+    }
+    .gauge-text {
+      position: absolute;
+      inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 1.1rem; font-weight: 700; color: var(--text);
+      line-height: 1;
+    }
+    .gauge-text span { font-size: 0.55rem; color: var(--muted); }
+    .speed-info { flex: 1; }
+    .speed-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 4px; }
+    .speed-limit {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px;
+      border: 2.5px solid var(--warning);
+      border-radius: 50%;
+      font-size: 0.85rem; font-weight: 700; color: var(--warning);
+    }
+    .speed-status { font-size: 0.72rem; color: var(--success); margin-top: 4px; }
+
+    /* Alerts */
+    .alert-item {
+      margin: 0 12px 8px;
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-left: 3px solid var(--warning);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .alert-item:hover { background: #0d2540; }
+    .alert-item.danger { border-left-color: var(--danger); }
+    .alert-item.info   { border-left-color: var(--primary); }
+    .alert-icon { font-size: 1.1rem; flex-shrink: 0; }
+    .alert-body { flex: 1; min-width: 0; }
+    .alert-title { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+    .alert-desc  { font-size: 0.65rem; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alert-time  { font-size: 0.6rem; color: var(--muted); flex-shrink: 0; }
+
+    /* Nearby */
+    .nearby-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 0 12px 12px;
+    }
+    .nearby-card {
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .nearby-card:hover { border-color: var(--primary); background: #0d2540; }
+    .nearby-icon { font-size: 1.4rem; margin-bottom: 4px; }
+    .nearby-name { font-size: 0.7rem; color: var(--muted); }
+    .nearby-dist { font-size: 0.65rem; color: var(--primary); margin-top: 2px; }
+
+    /* ─── CONTENT PANELS (map / sms / camera) ─── */
+    .panel {
+      flex: 1;
+      display: none;
+      position: relative;
+      overflow: hidden;
+    }
+    .panel.active { display: flex; }
+
+    /* ── MAP panel ── */
+    #panel-gps { display: none; }
+    #panel-gps.active { display: block; }
+    #map { width: 100%; height: 100%; }
+
+    /* Map overlay controls */
+    .map-controls {
+      position: absolute;
+      top: 16px; right: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 800;
+    }
+    .map-btn {
+      width: 40px; height: 40px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 1rem;
+      transition: all .2s;
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    }
+    .map-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .map-btn.active { background: var(--primary); color: var(--secondary); border-color: var(--primary); }
+
+    /* Live toast */
+    .live-toast {
+      position: absolute;
+      top: 16px; left: 50%;
+      transform: translateX(-50%);
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 8px 18px;
+      font-size: 0.78rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 800;
+      box-shadow: 0 4px 20px rgba(0,0,0,.4);
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* Bottom bar */
+    .bottom-bar {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      background: linear-gradient(to top, var(--card-bg) 60%, transparent);
+      padding: 16px 20px 14px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      z-index: 800;
+    }
+    .nav-current {
+      flex: 1;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .turn-icon {
+      width: 40px; height: 40px;
+      background: var(--primary);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      color: var(--secondary);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .turn-text { flex: 1; }
+    .turn-action { font-size: 0.75rem; color: var(--muted); }
+    .turn-road   { font-size: 0.95rem; font-weight: 600; color: var(--text); }
+    .turn-dist   { font-size: 0.75rem; color: var(--primary); }
+    .btn-stop {
+      background: var(--danger);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s;
+    }
+    .btn-stop:hover { opacity: .85; }
+    .btn-reroute {
+      background: var(--primary);
+      color: var(--secondary);
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s;
+    }
+    .btn-reroute:hover { opacity: .85; }
+
+    /* GPS indicator */
+    .gps-indicator {
+      position: absolute;
+      bottom: 90px; right: 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 0.7rem;
+      color: var(--muted);
+      z-index: 800;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    }
+    .gps-indicator .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+
+    /* Leaflet dark overrides */
+    .leaflet-tile { filter: brightness(.65) invert(1) hue-rotate(180deg) saturate(.8); }
+    .leaflet-control-zoom { display: none; }
+    .leaflet-control-attribution { display: none; }
+
+    /* ── SMS PANEL ── */
+    #panel-sms {
+      flex-direction: row;
+      background: var(--secondary);
+    }
+    .sms-list {
+      width: 280px;
+      flex-shrink: 0;
+      background: var(--card-bg);
+      border-right: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+    }
+    .sms-list-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sms-list-header h2 {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .badge {
+      background: var(--danger);
+      color: #fff;
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 10px;
+    }
+    .sms-search {
+      margin: 10px 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 7px 10px;
+    }
+    .sms-search input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 0.78rem;
+      width: 100%;
+    }
+    .sms-search input::placeholder { color: var(--muted); }
+    .sms-contacts { flex: 1; overflow-y: auto; }
+    .sms-contacts::-webkit-scrollbar { width: 3px; }
+    .sms-contacts::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+    .contact-item {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--card-border);
+      transition: background .15s;
+    }
+    .contact-item:hover { background: #0a1e36; }
+    .contact-item.active { background: rgba(0,200,255,.08); border-left: 3px solid var(--primary); }
+    .contact-avatar {
+      width: 38px; height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0a3060, #0f4080);
+      border: 2px solid var(--card-border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--primary);
+      flex-shrink: 0;
+    }
+    .contact-info { flex: 1; min-width: 0; }
+    .contact-name { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+    .contact-preview { font-size: 0.67rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .contact-meta { text-align: right; }
+    .contact-time { font-size: 0.6rem; color: var(--muted); }
+    .contact-unread {
+      width: 16px; height: 16px;
+      background: var(--primary);
+      border-radius: 50%;
+      font-size: 0.55rem;
+      font-weight: 700;
+      color: var(--secondary);
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 4px;
+      margin-left: auto;
+    }
+
+    /* SMS thread */
+    .sms-thread {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--secondary);
+    }
+    .thread-header {
+      padding: 14px 18px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .thread-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0a3060, #0f4080);
+      border: 2px solid var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.82rem; font-weight: 700; color: var(--primary);
+    }
+    .thread-name { font-size: 0.9rem; font-weight: 600; color: var(--text); }
+    .thread-sub  { font-size: 0.65rem; color: var(--success); }
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .messages-area::-webkit-scrollbar { width: 3px; }
+    .messages-area::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+    .msg { display: flex; flex-direction: column; max-width: 65%; }
+    .msg.out { align-self: flex-end; align-items: flex-end; }
+    .msg.in  { align-self: flex-start; align-items: flex-start; }
+    .msg-bubble {
+      padding: 9px 13px;
+      border-radius: 14px;
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+    .msg.out .msg-bubble {
+      background: var(--primary);
+      color: var(--secondary);
+      border-bottom-right-radius: 4px;
+    }
+    .msg.in .msg-bubble {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+    .msg-time { font-size: 0.58rem; color: var(--muted); margin-top: 3px; }
+    .date-divider {
+      text-align: center;
+      font-size: 0.62rem;
+      color: var(--muted);
+      padding: 4px 0 2px;
+    }
+    .compose-area {
+      padding: 12px 16px;
+      background: var(--card-bg);
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .compose-input {
+      flex: 1;
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 9px 16px;
+      font-size: 0.82rem;
+      color: var(--text);
+      outline: none;
+      transition: border-color .2s;
+    }
+    .compose-input:focus { border-color: var(--primary); }
+    .compose-input::placeholder { color: var(--muted); }
+    .btn-send {
+      width: 38px; height: 38px;
+      background: var(--primary);
+      border: none;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity .2s;
+    }
+    .btn-send:hover { opacity: .85; }
+
+    /* ── CAMERA PANEL ── */
+    #panel-camera {
+      flex-direction: column;
+      background: #060e1a;
+    }
+    .camera-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      flex-shrink: 0;
+    }
+    .camera-toolbar h2 { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+    .cam-toolbar-right { display: flex; gap: 8px; align-items: center; }
+    .cam-chip {
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .cam-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .cam-chip.active { background: var(--primary); color: var(--secondary); border-color: var(--primary); }
+    .cam-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 3px;
+      padding: 3px;
+      overflow: hidden;
+    }
+    .cam-cell {
+      background: #060e1a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color .2s;
+    }
+    .cam-cell:hover { border-color: var(--primary); }
+    .cam-cell.featured {
+      grid-column: 1 / 3;
+      grid-row: 1;
+    }
+    .cam-feed {
+      width: 100%; height: 100%;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          rgba(0,0,0,.04) 0px, rgba(0,0,0,.04) 1px,
+          transparent 1px, transparent 4px
+        ),
+        radial-gradient(ellipse at 30% 40%, #0a2540 0%, #060e1a 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cam-feed svg { opacity: .12; }
+    .cam-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, transparent 50%, rgba(6,14,26,.9) 100%);
+    }
+    .cam-label {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .cam-name { font-size: 0.75rem; font-weight: 600; color: var(--text); }
+    .cam-status {
+      font-size: 0.6rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      letter-spacing: .04em;
+    }
+    .cam-status.online { background: rgba(0,230,118,.15); color: var(--success); border: 1px solid rgba(0,230,118,.3); }
+    .cam-status.offline { background: rgba(255,61,87,.15); color: var(--danger); border: 1px solid rgba(255,61,87,.3); }
+    .cam-corner {
+      position: absolute;
+      top: 10px; right: 10px;
+      display: flex;
+      gap: 6px;
+    }
+    .cam-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+    .cam-dot.rec { background: var(--danger); animation: pulse 2s infinite; }
+    .cam-timestamp {
+      position: absolute;
+      top: 10px; left: 10px;
+      font-size: 0.62rem;
+      color: rgba(232,244,253,.5);
+      font-family: monospace;
+    }
+    .cam-cell::after {
+      content: '';
+      position: absolute;
+      top: -100%;
+      left: 0; right: 0;
+      height: 60%;
+      background: linear-gradient(to bottom, transparent, rgba(0,200,255,.015), transparent);
+      animation: scanline 6s linear infinite;
+      pointer-events: none;
+    }
+    @keyframes scanline {
+      0%   { top: -60%; }
+      100% { top: 120%; }
+    }
+
+    /* ─── RIGHT INFO PANEL ─── */
+    .info-panel {
+      width: 240px;
+      flex-shrink: 0;
+      background: var(--card-bg);
+      border-left: 1px solid var(--card-border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .info-panel::-webkit-scrollbar { width: 4px; }
+    .info-panel::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 4px; }
+
+    .route-step {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      transition: background .15s;
+      cursor: pointer;
+    }
+    .route-step:hover { background: #0a1e36; }
+    .route-step.active { background: rgba(0,200,255,.07); }
+    .step-num {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: var(--secondary);
+      font-size: 0.65rem;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-num.done { background: var(--muted); }
+    .step-body { flex: 1; min-width: 0; }
+    .step-road { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+    .step-inst { font-size: 0.66rem; color: var(--muted); margin-top: 1px; }
+    .step-meta { text-align: right; flex-shrink: 0; }
+    .step-km   { font-size: 0.7rem; color: var(--primary); }
+    .step-min  { font-size: 0.62rem; color: var(--muted); }
+
+    /* Traffic bar */
+    .traffic-bar {
+      margin: 0 12px 12px;
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .traffic-title { font-size: 0.72rem; color: var(--muted); margin-bottom: 8px; }
+    .traffic-segments {
+      display: flex;
+      height: 10px;
+      border-radius: 6px;
+      overflow: hidden;
+      gap: 2px;
+    }
+    .seg { height: 100%; border-radius: 3px; }
+
+    /* Weather */
+    .weather-strip {
+      margin: 0 12px 12px;
+      background: #0a1e36;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .weather-left { display: flex; align-items: center; gap: 8px; }
+    .weather-icon { font-size: 1.4rem; }
+    .weather-val  { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .weather-desc { font-size: 0.65rem; color: var(--muted); }
+    .weather-right { text-align: right; }
+    .weather-extra { font-size: 0.65rem; color: var(--muted); margin-top: 1px; }
+
+    /* Responsive */
+    @media (max-width: 1000px) {
+      .info-panel { display: none; }
+      .sidebar { width: 230px; }
+    }
+    @media (max-width: 700px) {
+      .sidebar { display: none; }
+      .header-center { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ════════════════════ HEADER ════════════════════ -->
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="16" cy="14" r="11" fill="#0a1e36" stroke="#00c8ff" stroke-width="2"/>
+      <circle cx="16" cy="14" r="4" fill="#00c8ff"/>
+      <path d="M16 25 L13 32 L16 30 L19 32 Z" fill="#00c8ff"/>
+      <circle cx="16" cy="14" r="8" stroke="#00c8ff" stroke-width="1" stroke-dasharray="3 3" opacity=".4"/>
+    </svg>
+    Admin
+  </div>
+
+  <div class="header-center">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+    <input type="text" placeholder="Search destination..." value="Manila, Intramuros" />
+  </div>
+
+  <div class="header-right">
+    <div class="status-dot"></div>
+    <span style="font-size:.72rem;color:var(--success)">GPS Active</span>
+    <div class="btn-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+      </svg>
+    </div>
+    <div class="btn-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<!-- ════════════════════ MAIN ════════════════════ -->
+<div class="main">
+
+  <!-- LEFT SIDEBAR -->
+  <aside class="sidebar">
+
+    <!-- ── Nav buttons ── -->
+    <div class="sidebar-nav">
+      <div class="nav-btn active" id="navGps" onclick="switchPanel('gps')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+          <circle cx="12" cy="12" r="9" stroke-dasharray="4 2"/>
+        </svg>
+        GPS
+      </div>
+      <div class="nav-btn" id="navSms" onclick="switchPanel('sms')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+        </svg>
+        SMS
+      </div>
+      <div class="nav-btn" id="navCamera" onclick="switchPanel('camera')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 7l-7 5 7 5V7z"/>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+        </svg>
+        Camera
+      </div>
+    </div>
+
+    <!-- ── GPS sidebar content ── -->
+    <div id="sidebarGps">
+      <div class="section-label">Active Trip</div>
+      <div class="trip-card">
+        <div class="trip-dest">Intramuros, Manila</div>
+        <div class="trip-sub">Via Roxas Blvd — Fastest Route</div>
+        <div class="trip-stats">
+          <div class="stat">
+            <div class="stat-value" id="stat-eta">14<sup style="font-size:.55rem">min</sup></div>
+            <div class="stat-label">ETA</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="stat-dist">8.3<sup style="font-size:.55rem">km</sup></div>
+            <div class="stat-label">Distance</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="stat-arr">3:42<sup style="font-size:.55rem">pm</sup></div>
+            <div class="stat-label">Arrival</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-label">Speed</div>
+      <div class="speed-gauge">
+        <div class="gauge-circle">
+          <svg width="72" height="72" viewBox="0 0 72 72">
+            <circle class="gauge-bg" cx="36" cy="36" r="27"/>
+            <circle class="gauge-fill" id="gaugeFill" cx="36" cy="36" r="27"/>
+          </svg>
+          <div class="gauge-text">
+            <div id="speedNum">42</div>
+            <span>km/h</span>
+          </div>
+        </div>
+        <div class="speed-info">
+          <div class="speed-label">Speed Limit</div>
+          <div class="speed-limit">60</div>
+          <div class="speed-status" id="speedStatus">Within limit</div>
+        </div>
+      </div>
+
+      <div class="section-label">Traffic Condition</div>
+      <div class="traffic-bar">
+        <div class="traffic-title">Route traffic — mostly light</div>
+        <div class="traffic-segments">
+          <div class="seg" style="flex:2;background:#00e676"></div>
+          <div class="seg" style="flex:1;background:#ffb300"></div>
+          <div class="seg" style="flex:3;background:#00e676"></div>
+          <div class="seg" style="flex:1;background:#ff3d57"></div>
+          <div class="seg" style="flex:2;background:#00e676"></div>
+        </div>
+      </div>
+
+      <div class="section-label">Weather</div>
+      <div class="weather-strip">
+        <div class="weather-left">
+          <div class="weather-icon">&#x26C5;</div>
+          <div>
+            <div class="weather-val">29°C</div>
+            <div class="weather-desc">Partly cloudy</div>
+          </div>
+        </div>
+        <div class="weather-right">
+          <div class="weather-extra">Humidity: 78%</div>
+          <div class="weather-extra">Wind: 12 km/h</div>
+          <div class="weather-extra">Visibility: Good</div>
+        </div>
+      </div>
+
+      <div class="section-label">Alerts Ahead</div>
+      <div class="alert-item">
+        <div class="alert-icon">&#x26A0;&#xFE0F;</div>
+        <div class="alert-body">
+          <div class="alert-title">Heavy Traffic</div>
+          <div class="alert-desc">EDSA–Taft intersection — 2.1 km ahead</div>
+        </div>
+        <div class="alert-time">2 min</div>
+      </div>
+      <div class="alert-item danger">
+        <div class="alert-icon">&#x1F6A7;</div>
+        <div class="alert-body">
+          <div class="alert-title">Road Work</div>
+          <div class="alert-desc">Roxas Blvd — right lane closed</div>
+        </div>
+        <div class="alert-time">5 min</div>
+      </div>
+      <div class="alert-item info">
+        <div class="alert-icon">&#x26FD;</div>
+        <div class="alert-body">
+          <div class="alert-title">Gas Station</div>
+          <div class="alert-desc">Petron — 400m off route</div>
+        </div>
+        <div class="alert-time">—</div>
+      </div>
+
+      <div class="section-label">Nearby</div>
+      <div class="nearby-grid">
+        <div class="nearby-card"><div class="nearby-icon">&#x1F354;</div><div class="nearby-name">Food</div><div class="nearby-dist">0.3 km</div></div>
+        <div class="nearby-card"><div class="nearby-icon">&#x26FD;</div><div class="nearby-name">Gas</div><div class="nearby-dist">0.8 km</div></div>
+        <div class="nearby-card"><div class="nearby-icon">&#x1F17F;&#xFE0F;</div><div class="nearby-name">Parking</div><div class="nearby-dist">1.2 km</div></div>
+        <div class="nearby-card"><div class="nearby-icon">&#x1F3E5;</div><div class="nearby-name">Hospital</div><div class="nearby-dist">2.0 km</div></div>
+      </div>
+    </div>
+
+    <!-- ── SMS sidebar content ── -->
+    <div id="sidebarSms" style="display:none">
+      <div class="section-label">Contacts</div>
+      <div style="padding:0 12px 8px">
+        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px">
+          <div style="font-size:.7rem;color:var(--muted);margin-bottom:6px">Quick Stats</div>
+          <div style="display:flex;justify-content:space-between">
+            <div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--primary)">12</div><div style="font-size:.6rem;color:var(--muted)">Unread</div></div>
+            <div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--text)">48</div><div style="font-size:.6rem;color:var(--muted)">Total</div></div>
+            <div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--success)">5</div><div style="font-size:.6rem;color:var(--muted)">Online</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Camera sidebar content ── -->
+    <div id="sidebarCamera" style="display:none">
+      <div class="section-label">Camera Status</div>
+      <div style="padding:0 12px 8px;display:flex;flex-direction:column;gap:8px">
+        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 1 — Front</div>
+          <span class="cam-status online">Online</span>
+        </div>
+        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 2 — Rear</div>
+          <span class="cam-status online">Online</span>
+        </div>
+        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 3 — Left</div>
+          <span class="cam-status online">Online</span>
+        </div>
+        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 4 — Right</div>
+          <span class="cam-status offline">Offline</span>
+        </div>
+      </div>
+      <div class="section-label">Recording</div>
+      <div style="padding:0 12px 12px">
+        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:.7rem;color:var(--muted)">Storage Used</span><span style="font-size:.75rem;font-weight:600;color:var(--text)">14.2 GB</span></div>
+          <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden;margin-bottom:8px"><div style="width:57%;height:100%;background:var(--primary)"></div></div>
+          <div style="display:flex;justify-content:space-between"><span style="font-size:.7rem;color:var(--muted)">Resolution</span><span style="font-size:.75rem;font-weight:600;color:var(--text)">1080p</span></div>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ════ GPS / MAP PANEL ════ -->
+  <div class="panel active" id="panel-gps">
+    <div id="map"></div>
+
+    <div class="live-toast" id="liveToast">
+      <div class="status-dot"></div>
+      Live GPS Tracking &nbsp;&middot;&nbsp; Updated just now
+    </div>
+
+    <div class="map-controls">
+      <div class="map-btn active" id="btnFollow" title="Follow">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
+        </svg>
+      </div>
+      <div class="map-btn" id="btnLayers" title="Layers">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+          <polyline points="2 17 12 22 22 17"/>
+          <polyline points="2 12 12 17 22 12"/>
+        </svg>
+      </div>
+      <div class="map-btn" id="btnTraffic" title="Traffic">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="2" width="6" height="20" rx="3"/>
+          <circle cx="12" cy="7" r="1.5" fill="#ff3d57" stroke="none"/>
+          <circle cx="12" cy="12" r="1.5" fill="#ffb300" stroke="none"/>
+          <circle cx="12" cy="17" r="1.5" fill="#00e676" stroke="none"/>
+        </svg>
+      </div>
+      <div class="map-btn" id="btnCompass" title="Compass">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <polygon points="16.24,7.76 14.12,14.12 7.76,16.24 9.88,9.88"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="gps-indicator">
+      <div class="dot"></div>
+      <span id="gpsCoords">14.5870° N · 120.9810° E</span>
+    </div>
+
+    <div class="bottom-bar">
+      <div class="nav-current">
+        <div class="turn-icon">&#x21B1;</div>
+        <div class="turn-text">
+          <div class="turn-action">Turn right onto</div>
+          <div class="turn-road">Roxas Boulevard</div>
+          <div class="turn-dist">In 350 m</div>
+        </div>
+      </div>
+      <button class="btn-reroute" onclick="rerouteAlert()">Re-route</button>
+      <button class="btn-stop" onclick="stopNav()">Stop</button>
+    </div>
+  </div>
+
+  <!-- ════ SMS PANEL ════ -->
+  <div class="panel" id="panel-sms">
+    <div class="sms-list">
+      <div class="sms-list-header">
+        <h2>Messages</h2>
+        <span class="badge">3</span>
+      </div>
+      <div class="sms-search">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+        </svg>
+        <input type="text" placeholder="Search messages..." />
+      </div>
+      <div class="sms-contacts">
+        <div class="contact-item active">
+          <div class="contact-avatar">JD</div>
+          <div class="contact-info">
+            <div class="contact-name">Juan Dela Cruz</div>
+            <div class="contact-preview">Already at the checkpoint, over.</div>
+          </div>
+          <div class="contact-meta">
+            <div class="contact-time">2m ago</div>
+          </div>
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar">MR</div>
+          <div class="contact-info">
+            <div class="contact-name">Maria Reyes</div>
+            <div class="contact-preview">Traffic along EDSA, rerouting now.</div>
+          </div>
+          <div class="contact-meta">
+            <div class="contact-time">15m</div>
+            <div class="contact-unread">2</div>
+          </div>
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar">CS</div>
+          <div class="contact-info">
+            <div class="contact-name">Control Station</div>
+            <div class="contact-preview">Unit 4 has reached waypoint B.</div>
+          </div>
+          <div class="contact-meta">
+            <div class="contact-time">32m</div>
+            <div class="contact-unread">1</div>
+          </div>
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar">AR</div>
+          <div class="contact-info">
+            <div class="contact-name">Allan Ramos</div>
+            <div class="contact-preview">ETA to base: 20 minutes.</div>
+          </div>
+          <div class="contact-meta">
+            <div class="contact-time">1h</div>
+          </div>
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar">HQ</div>
+          <div class="contact-info">
+            <div class="contact-name">Headquarters</div>
+            <div class="contact-preview">All units report status by 1800h.</div>
+          </div>
+          <div class="contact-meta">
+            <div class="contact-time">2h</div>
+          </div>
+        </div>
+        <div class="contact-item">
+          <div class="contact-avatar">TS</div>
+          <div class="contact-info">
+            <div class="contact-name">Tracker System</div>
+            <div class="contact-preview">GPS signal restored on Unit 7.</div>
+          </div>
+          <div class="contact-meta">
+            <div class="contact-time">3h</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sms-thread">
+      <div class="thread-header">
+        <div class="thread-avatar">JD</div>
+        <div style="flex:1">
+          <div class="thread-name">Juan Dela Cruz</div>
+          <div class="thread-sub">&#x25CF; Online · Unit 3 · GPS Active</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="btn-icon" style="width:32px;height:32px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.5 9.79a19.79 19.79 0 01-3.07-8.68A2 2 0 012.41 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.39a16 16 0 006 6l.76-.76a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+          </div>
+          <div class="btn-icon" style="width:32px;height:32px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="messages-area">
+        <div class="date-divider">Today, March 11</div>
+        <div class="msg in">
+          <div class="msg-bubble">Unit 3 reporting. Departed base at 0820h, heading to Roxas Blvd checkpoint.</div>
+          <div class="msg-time">08:21 AM</div>
+        </div>
+        <div class="msg out">
+          <div class="msg-bubble">Copy that. Maintain current speed and report at each waypoint.</div>
+          <div class="msg-time">08:23 AM</div>
+        </div>
+        <div class="msg in">
+          <div class="msg-bubble">Roger. Waypoint Alpha cleared.</div>
+          <div class="msg-time">08:45 AM</div>
+        </div>
+        <div class="msg out">
+          <div class="msg-bubble">Confirmed. Traffic advisory: heavy congestion on EDSA–Taft. Suggest alternate via A. Mabini.</div>
+          <div class="msg-time">08:47 AM</div>
+        </div>
+        <div class="msg in">
+          <div class="msg-bubble">Switching to alternate route now. GPS recalculating.</div>
+          <div class="msg-time">08:49 AM</div>
+        </div>
+        <div class="msg in">
+          <div class="msg-bubble">Already at the checkpoint, over.</div>
+          <div class="msg-time">09:12 AM · Just now</div>
+        </div>
+      </div>
+
+      <div class="compose-area">
+        <input class="compose-input" type="text" placeholder="Type a message..." />
+        <button class="btn-send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0a1628" stroke-width="2.5">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ CAMERA PANEL ════ -->
+  <div class="panel" id="panel-camera">
+    <div class="camera-toolbar">
+      <h2>Camera Feeds</h2>
+      <div class="cam-toolbar-right">
+        <div class="cam-chip active">Live</div>
+        <div class="cam-chip">Playback</div>
+        <div class="cam-chip">Snapshot</div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:.68rem;color:var(--danger)">
+          <div class="status-dot" style="background:var(--danger)"></div>
+          REC
+        </div>
+      </div>
+    </div>
+
+    <div class="cam-grid">
+      <div class="cam-cell featured">
+        <div class="cam-feed">
+          <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+          </svg>
+        </div>
+        <div class="cam-overlay"></div>
+        <div class="cam-timestamp" id="camTime">09:12:44</div>
+        <div class="cam-corner"><div class="cam-dot rec"></div></div>
+        <div class="cam-label">
+          <span class="cam-name">CAM 1 — Front View</span>
+          <span class="cam-status online">Online</span>
+        </div>
+      </div>
+
+      <div class="cam-cell">
+        <div class="cam-feed" style="background:radial-gradient(ellipse at 60% 30%, #0a2030 0%, #060e1a 70%)">
+          <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+          </svg>
+        </div>
+        <div class="cam-overlay"></div>
+        <div class="cam-timestamp">09:12:44</div>
+        <div class="cam-corner"><div class="cam-dot rec"></div></div>
+        <div class="cam-label">
+          <span class="cam-name">CAM 2 — Rear View</span>
+          <span class="cam-status online">Online</span>
+        </div>
+      </div>
+
+      <div class="cam-cell">
+        <div class="cam-feed" style="background:radial-gradient(ellipse at 70% 60%, #0a1830 0%, #060e1a 70%)">
+          <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+          </svg>
+        </div>
+        <div class="cam-overlay"></div>
+        <div class="cam-timestamp">09:12:44</div>
+        <div class="cam-corner"><div class="cam-dot rec"></div></div>
+        <div class="cam-label">
+          <span class="cam-name">CAM 3 — Left Side</span>
+          <span class="cam-status online">Online</span>
+        </div>
+      </div>
+
+      <div class="cam-cell">
+        <div class="cam-feed" style="background:#060e1a;filter:grayscale(1)">
+          <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="1" opacity=".4">
+            <line x1="1" y1="1" x2="23" y2="23"/>
+            <path d="M21 21H3a2 2 0 01-2-2V8a2 2 0 012-2h3m3-3h6l2 3h4a2 2 0 012 2v9.34"/>
+          </svg>
+        </div>
+        <div class="cam-overlay"></div>
+        <div class="cam-label">
+          <span class="cam-name">CAM 4 — Right Side</span>
+          <span class="cam-status offline">Offline</span>
+        </div>
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+          <span style="font-size:.72rem;color:var(--muted);background:rgba(6,14,26,.8);padding:6px 12px;border-radius:6px;border:1px solid var(--card-border)">Signal Lost</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT INFO PANEL (visible only on GPS) -->
+  <aside class="info-panel" id="rightPanel">
+    <div class="section-label">Turn-by-Turn</div>
+    <div class="route-step done">
+      <div class="step-num done">✓</div>
+      <div class="step-body"><div class="step-road">Taft Avenue</div><div class="step-inst">Head north</div></div>
+      <div class="step-meta"><div class="step-km">1.2 km</div><div class="step-min">Done</div></div>
+    </div>
+    <div class="route-step done">
+      <div class="step-num done">✓</div>
+      <div class="step-body"><div class="step-road">A. Mabini St.</div><div class="step-inst">Turn right</div></div>
+      <div class="step-meta"><div class="step-km">0.4 km</div><div class="step-min">Done</div></div>
+    </div>
+    <div class="route-step active">
+      <div class="step-num">3</div>
+      <div class="step-body"><div class="step-road">Roxas Blvd</div><div class="step-inst">Turn right &middot; Now</div></div>
+      <div class="step-meta"><div class="step-km">3.1 km</div><div class="step-min">~4 min</div></div>
+    </div>
+    <div class="route-step">
+      <div class="step-num">4</div>
+      <div class="step-body"><div class="step-road">P. Burgos St.</div><div class="step-inst">Turn left</div></div>
+      <div class="step-meta"><div class="step-km">0.6 km</div><div class="step-min">~2 min</div></div>
+    </div>
+    <div class="route-step">
+      <div class="step-num">5</div>
+      <div class="step-body"><div class="step-road">Gen. Luna St.</div><div class="step-inst">Turn right</div></div>
+      <div class="step-meta"><div class="step-km">0.9 km</div><div class="step-min">~2 min</div></div>
+    </div>
+    <div class="route-step">
+      <div class="step-num">6</div>
+      <div class="step-body"><div class="step-road">Intramuros</div><div class="step-inst">You have arrived</div></div>
+      <div class="step-meta"><div class="step-km">—</div><div class="step-min">Dest.</div></div>
+    </div>
+
+    <div class="section-label" style="margin-top:8px">Route Summary</div>
+    <div style="padding:0 12px 12px">
+      <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:10px;padding:12px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:.7rem;color:var(--muted)">Total Distance</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--text)">8.3 km</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:.7rem;color:var(--muted)">Remaining</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--primary)" id="distRemaining">5.1 km</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:.7rem;color:var(--muted)">Traffic Delay</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--warning)">+3 min</span>
+        </div>
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-size:.7rem;color:var(--muted)">Avg Speed</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--text)">34 km/h</span>
+        </div>
+        <div style="margin-top:10px;background:var(--card-border);border-radius:4px;height:4px;overflow:hidden">
+          <div id="progressBar" style="width:38%;height:100%;background:var(--primary);border-radius:4px;transition:width 1s"></div>
+        </div>
+        <div style="font-size:.6rem;color:var(--muted);margin-top:4px;text-align:right" id="progressPct">38% complete</div>
+      </div>
+    </div>
+  </aside>
+
+</div><!-- /main -->
+
+<script>
+  // ══════════════════════════════════════════
+  //  PANEL SWITCHING
+  // ══════════════════════════════════════════
+  const panels     = { gps: 'panel-gps', sms: 'panel-sms', camera: 'panel-camera' };
+  const navBtns    = { gps: 'navGps',    sms: 'navSms',    camera: 'navCamera'    };
+  const sidebarCtx = { gps: 'sidebarGps', sms: 'sidebarSms', camera: 'sidebarCamera' };
+  let currentPanel = 'gps';
+
+  function switchPanel(name) {
+    if (name === currentPanel) return;
+    document.getElementById(panels[currentPanel]).classList.remove('active');
+    document.getElementById(navBtns[currentPanel]).classList.remove('active');
+    document.getElementById(sidebarCtx[currentPanel]).style.display = 'none';
+    document.getElementById(panels[name]).classList.add('active');
+    document.getElementById(navBtns[name]).classList.add('active');
+    document.getElementById(sidebarCtx[name]).style.display = 'block';
+    document.getElementById('rightPanel').style.display = name === 'gps' ? 'flex' : 'none';
+    currentPanel = name;
+    if (name === 'gps') {
+      setTimeout(() => { if (typeof map !== 'undefined') map.invalidateSize(); }, 50);
+    }
+  }
+
+  // ══════════════════════════════════════════
+  //  MAP
+  // ══════════════════════════════════════════
+  const map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([14.5820, 120.9865], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  const routeCoords = [
+    [14.5650, 120.9920],
+    [14.5720, 120.9880],
+    [14.5790, 120.9840],
+    [14.5870, 120.9810],
+    [14.5920, 120.9840],
+    [14.5960, 120.9860],
+    [14.5995, 120.9842]
+  ];
+
+  L.polyline(routeCoords.slice(0, 4), { color: '#1a3050', weight: 6, opacity: .8, lineJoin: 'round', lineCap: 'round' }).addTo(map);
+  L.polyline(routeCoords.slice(3),    { color: '#00c8ff', weight: 6, opacity: .85, lineJoin: 'round', lineCap: 'round' }).addTo(map);
+
+  const destIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:32px;height:32px;border-radius:50% 50% 50% 0;background:#ff3d57;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(255,61,87,.6)"></div>`,
+    iconSize: [32, 32], iconAnchor: [16, 32]
+  });
+  L.marker(routeCoords[routeCoords.length - 1], { icon: destIcon }).addTo(map)
+    .bindPopup('<b>Intramuros, Manila</b><br>Your destination');
+
+  const carIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:28px;height:28px;border-radius:50%;background:#00c8ff;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 0 0 6px rgba(0,200,255,.25),0 2px 10px rgba(0,200,255,.5)">&#x1F697;</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14]
+  });
+
+  let carIdx = 3;
+  const carMarker = L.marker(routeCoords[carIdx], { icon: carIcon }).addTo(map);
+
+  [
+    { latlng: [14.5760, 120.9855], icon: '&#x26A0;&#xFE0F;', label: 'Heavy Traffic' },
+    { latlng: [14.5840, 120.9820], icon: '&#x1F6A7;',         label: 'Road Work'    }
+  ].forEach(inc => {
+    L.marker(inc.latlng, {
+      icon: L.divIcon({
+        className: '',
+        html: `<div style="background:#ffb300;border-radius:8px;padding:3px 7px;font-size:12px;border:1px solid rgba(255,179,0,.5);box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:nowrap;font-family:sans-serif;color:#0a1628;font-weight:700">${inc.icon} ${inc.label}</div>`,
+        iconAnchor: [0, 0]
+      })
+    }).addTo(map);
+  });
+
+  map.fitBounds(L.latLngBounds(routeCoords), { padding: [70, 70] });
+
+  function advanceCar() {
+    if (carIdx < routeCoords.length - 1) {
+      carIdx++;
+      carMarker.setLatLng(routeCoords[carIdx]);
+      const coord = routeCoords[carIdx];
+      document.getElementById('gpsCoords').textContent =
+        coord[0].toFixed(4) + '° N · ' + coord[1].toFixed(4) + '° E';
+      const pct = Math.round((carIdx / (routeCoords.length - 1)) * 100);
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressPct').textContent = pct + '% complete';
+      document.getElementById('distRemaining').textContent = ((1 - pct / 100) * 8.3).toFixed(1) + ' km';
+    }
+  }
+  setInterval(advanceCar, 10000);
+
+  // ── Speedometer ──
+  const circumference = 2 * Math.PI * 27;
+  const gaugeFill   = document.getElementById('gaugeFill');
+  const speedNum    = document.getElementById('speedNum');
+  const speedStatus = document.getElementById('speedStatus');
+  const speeds = [42, 38, 55, 48, 35, 50, 44, 30, 58, 46, 40, 52];
+  let sIdx = 0;
+
+  function updateSpeed() {
+    const sp = speeds[sIdx++ % speeds.length];
+    gaugeFill.style.strokeDashoffset = circumference * (1 - Math.min(sp / 80, 1));
+    speedNum.textContent = sp;
+    if (sp > 60) {
+      gaugeFill.style.stroke = 'var(--danger)';
+      speedStatus.style.color = 'var(--danger)';
+      speedStatus.textContent = 'Over limit!';
+    } else if (sp > 50) {
+      gaugeFill.style.stroke = 'var(--warning)';
+      speedStatus.style.color = 'var(--warning)';
+      speedStatus.textContent = 'Near limit';
+    } else {
+      gaugeFill.style.stroke = 'var(--primary)';
+      speedStatus.style.color = 'var(--success)';
+      speedStatus.textContent = 'Within limit';
+    }
+  }
+  updateSpeed();
+  setInterval(updateSpeed, 3000);
+
+  // ── ETA countdown ──
+  let etaMin = 14;
+  setInterval(() => {
+    if (etaMin > 1) {
+      etaMin--;
+      document.getElementById('stat-eta').innerHTML = `${etaMin}<sup style="font-size:.55rem">min</sup>`;
+      document.getElementById('stat-dist').innerHTML = `${(etaMin * 0.59).toFixed(1)}<sup style="font-size:.55rem">km</sup>`;
+    }
+  }, 8000);
+
+  function updateArrival() {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + etaMin);
+    let h = now.getHours(), m = now.getMinutes();
+    const ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12 || 12;
+    document.getElementById('stat-arr').innerHTML = `${h}:${String(m).padStart(2,'0')}<sup style="font-size:.55rem">${ampm}</sup>`;
+  }
+  updateArrival();
+  setInterval(updateArrival, 60000);
+
+  // ── Camera clock ──
+  function updateCamTime() {
+    const now = new Date();
+    document.getElementById('camTime').textContent =
+      String(now.getHours()).padStart(2,'0') + ':' +
+      String(now.getMinutes()).padStart(2,'0') + ':' +
+      String(now.getSeconds()).padStart(2,'0');
+  }
+  updateCamTime();
+  setInterval(updateCamTime, 1000);
+
+  // ── Map button toggles ──
+  document.querySelectorAll('.map-btn').forEach(btn => {
+    btn.addEventListener('click', function () { this.classList.toggle('active'); });
+  });
+
+  // ── Action buttons ──
+  function rerouteAlert() {
+    const toast = document.getElementById('liveToast');
+    const orig = toast.innerHTML;
+    toast.innerHTML = '<div style="color:#ffb300;font-size:1rem">&#x21BA;</div>&nbsp;Calculating faster route&hellip;';
+    setTimeout(() => { toast.innerHTML = orig; }, 2500);
+  }
+
+  function stopNav() {
+    if (confirm('Stop navigation?')) {
+      document.getElementById('liveToast').innerHTML =
+        '<div style="color:var(--danger);font-size:1rem">&#x25A0;</div>&nbsp;Navigation stopped';
+    }
+  }
+</script>
+</body>
+</html>
