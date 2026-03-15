@@ -1,0 +1,102 @@
+<div id="sidebarGps">
+  <div class="section-label">GPS Status</div>
+  <div class="trip-card">
+    <div class="trip-dest" id="gps-location">Waiting for GPS fix…</div>
+    <div class="trip-sub" id="gps-fix-sub">Connecting to Pi backend</div>
+    <div class="trip-stats">
+      <div class="stat">
+        <div class="stat-value" id="stat-sat">—</div>
+        <div class="stat-label">Satellites</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-alt">—</div>
+        <div class="stat-label">Altitude</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-pts">—</div>
+        <div class="stat-label">Track pts</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">Speed</div>
+  <div class="speed-gauge">
+    <div class="gauge-circle">
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle class="gauge-bg" cx="36" cy="36" r="27"/>
+        <circle class="gauge-fill" id="gaugeFill" cx="36" cy="36" r="27"/>
+      </svg>
+      <div class="gauge-text">
+        <div id="speedNum">42</div>
+        <span>km/h</span>
+      </div>
+    </div>
+    <div class="speed-info">
+      <div class="speed-label">Speed Limit</div>
+      <div class="speed-limit">60</div>
+      <div class="speed-status" id="speedStatus">Within limit</div>
+    </div>
+  </div>
+
+  <div class="section-label">Traffic Condition</div>
+  <div class="traffic-bar">
+    <div class="traffic-title">Route traffic — mostly light</div>
+    <div class="traffic-segments">
+      <div class="seg" style="flex:2;background:#00e676"></div>
+      <div class="seg" style="flex:1;background:#ffb300"></div>
+      <div class="seg" style="flex:3;background:#00e676"></div>
+      <div class="seg" style="flex:1;background:#ff3d57"></div>
+      <div class="seg" style="flex:2;background:#00e676"></div>
+    </div>
+  </div>
+
+  <div class="section-label">Weather</div>
+  <div class="weather-strip">
+    <div class="weather-left">
+      <div class="weather-icon">&#x26C5;</div>
+      <div>
+        <div class="weather-val">29°C</div>
+        <div class="weather-desc">Partly cloudy</div>
+      </div>
+    </div>
+    <div class="weather-right">
+      <div class="weather-extra">Humidity: 78%</div>
+      <div class="weather-extra">Wind: 12 km/h</div>
+      <div class="weather-extra">Visibility: Good</div>
+    </div>
+  </div>
+
+  <div class="section-label">Alerts Ahead</div>
+  <div class="alert-item">
+    <div class="alert-icon">&#x26A0;&#xFE0F;</div>
+    <div class="alert-body">
+      <div class="alert-title">Heavy Traffic</div>
+      <div class="alert-desc">EDSA–Taft intersection — 2.1 km ahead</div>
+    </div>
+    <div class="alert-time">2 min</div>
+  </div>
+  <div class="alert-item danger">
+    <div class="alert-icon">&#x1F6A7;</div>
+    <div class="alert-body">
+      <div class="alert-title">Road Work</div>
+      <div class="alert-desc">Roxas Blvd — right lane closed</div>
+    </div>
+    <div class="alert-time">5 min</div>
+  </div>
+  <div class="alert-item info">
+    <div class="alert-icon">&#x26FD;</div>
+    <div class="alert-body">
+      <div class="alert-title">Gas Station</div>
+      <div class="alert-desc">Petron — 400m off route</div>
+    </div>
+    <div class="alert-time">—</div>
+  </div>
+
+  <div class="section-label">Nearby</div>
+  <div class="nearby-grid">
+    <div class="nearby-card"><div class="nearby-icon">&#x1F354;</div><div class="nearby-name">Food</div><div class="nearby-dist">0.3 km</div></div>
+    <div class="nearby-card"><div class="nearby-icon">&#x26FD;</div><div class="nearby-name">Gas</div><div class="nearby-dist">0.8 km</div></div>
+    <div class="nearby-card"><div class="nearby-icon">&#x1F17F;&#xFE0F;</div><div class="nearby-name">Parking</div><div class="nearby-dist">1.2 km</div></div>
+    <div class="nearby-card"><div class="nearby-icon">&#x1F3E5;</div><div class="nearby-name">Hospital</div><div class="nearby-dist">2.0 km</div></div>
+  </div>
+</div>
