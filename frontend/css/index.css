@@ -860,13 +860,6 @@
       background: var(--danger);
     }
     .cam-dot.rec { background: var(--danger); animation: pulse 2s infinite; }
-    .cam-timestamp {
-      position: absolute;
-      top: 10px; left: 10px;
-      font-size: 0.62rem;
-      color: rgba(232,244,253,.5);
-      font-family: monospace;
-    }
     .cam-cell::after {
       content: '';
       position: absolute;

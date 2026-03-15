@@ -95,17 +95,6 @@ function initGaugeParts() {
   setInterval(updateArrival, 60000);
 }
 
-// ── Camera clock ──
-function updateCamTime() {
-  const now = new Date();
-  document.getElementById('camTime').textContent =
-    String(now.getHours()).padStart(2,'0') + ':' +
-    String(now.getMinutes()).padStart(2,'0') + ':' +
-    String(now.getSeconds()).padStart(2,'0');
-}
-updateCamTime();
-setInterval(updateCamTime, 1000);
-
 // ── Map button toggles ──
 document.querySelectorAll('.map-btn').forEach(btn => {
   btn.addEventListener('click', function () { this.classList.toggle('active'); });
