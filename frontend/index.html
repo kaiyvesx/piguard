@@ -324,9 +324,107 @@
     .panel.active { display: flex; }
 
     /* ── MAP panel ── */
-    #panel-gps { display: none; }
+    #panel-gps { display: none; position: relative; }
     #panel-gps.active { display: block; }
     #map { width: 100%; height: 100%; }
+
+    /* Floating device panel (slides in from right when marker clicked) */
+    .device-panel-float {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 300px;
+      max-width: 90%;
+      background: var(--card-bg);
+      border-left: 1px solid var(--card-border);
+      box-shadow: -4px 0 24px rgba(0,0,0,.3);
+      z-index: 900;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.3s ease;
+      overflow: hidden;
+    }
+    .device-panel-float.open {
+      transform: translateX(0);
+    }
+    .device-panel-float .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--card-border);
+      flex-shrink: 0;
+    }
+    .device-panel-float .panel-title { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+    .device-panel-float .panel-close {
+      width: 32px; height: 32px;
+      border: none;
+      background: var(--surface-1);
+      border-radius: 8px;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      line-height: 1;
+    }
+    .device-panel-float .panel-close:hover { color: var(--text); background: var(--surface-2); }
+    .device-panel-float .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .device-panel-float .device-header {
+      margin-bottom: 18px;
+    }
+    .device-panel-float .device-header .device-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 2px;
+    }
+    .device-panel-float .device-header .device-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .device-panel-float .device-header .device-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .device-panel-float .device-header .device-status .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+    .device-panel-float .device-header .device-status.offline .dot { background: var(--danger); }
+    .device-panel-float .device-header .device-status.moving .dot { background: var(--primary); }
+    .device-panel-float .section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 10px;
+    }
+    .device-panel-float .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 10px;
+      font-size: 0.82rem;
+    }
+    .device-panel-float .info-row .label { color: var(--muted); flex-shrink: 0; }
+    .device-panel-float .info-row .value { color: var(--text); font-weight: 600; word-break: break-word; text-align: right; min-width: 0; flex: 1; margin-left: 12px; }
+    .device-panel-float .connectivity-block {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--card-border);
+    }
 
     /* Map overlay controls */
     .map-controls {
@@ -372,16 +470,22 @@
       white-space: nowrap;
     }
 
-    /* Bottom bar */
+    /* Bottom bar: responsive when right device panel is open */
     .bottom-bar {
       position: absolute;
-      bottom: 0; left: 0; right: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
       background: linear-gradient(to top, var(--card-bg) 60%, transparent);
       padding: 16px 20px 14px;
       display: flex;
       align-items: center;
       gap: 16px;
       z-index: 800;
+      transition: right 0.3s ease;
+    }
+    #panel-gps:has(.device-panel-float.open) .bottom-bar {
+      right: 300px;
     }
     .nav-current {
       flex: 1;
@@ -432,10 +536,11 @@
     }
     .btn-reroute:hover { opacity: .85; }
 
-    /* GPS indicator */
+    /* GPS indicator: shift left when device panel is open */
     .gps-indicator {
       position: absolute;
-      bottom: 90px; right: 16px;
+      bottom: 90px;
+      right: 16px;
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       border-radius: 10px;
@@ -447,6 +552,10 @@
       align-items: center;
       gap: 6px;
       box-shadow: 0 2px 12px rgba(0,0,0,.4);
+      transition: right 0.3s ease;
+    }
+    #panel-gps:has(.device-panel-float.open) .gps-indicator {
+      right: 316px;
     }
     .gps-indicator .dot {
       width: 7px; height: 7px;
@@ -458,6 +567,17 @@
     /* Leaflet overrides */
     .leaflet-control-zoom { display: none; }
     .leaflet-control-attribution { display: none; }
+    .marker-tooltip-last-seen.leaflet-tooltip {
+      margin-top: 0;
+      padding: 6px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: var(--card-bg);
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
 
     /* ── SMS PANEL ── */
     #panel-sms {
@@ -996,6 +1116,30 @@
       <button class="btn-reroute" onclick="rerouteAlert()">Clear Track</button>
       <button class="btn-stop" onclick="stopNav()">Stop</button>
     </div>
+
+    <!-- Floating device info panel (slides in when tracker marker is clicked) -->
+    <div class="device-panel-float" id="devicePanelFloat" aria-hidden="true">
+      <div class="panel-header">
+        <span class="panel-title">Device</span>
+        <button type="button" class="panel-close" id="devicePanelClose" aria-label="Close">×</button>
+      </div>
+      <div class="panel-body">
+        <div class="device-header">
+          <div class="device-name" id="floatDeviceName">RPI-01</div>
+          <div class="device-sub" id="floatDeviceSub">Raspberry Pi GPS Tracker</div>
+          <div class="device-status" id="floatDeviceStatus"><span class="dot"></span><span id="floatDeviceStatusText">Online</span></div>
+        </div>
+        <div class="section-title">Device Information</div>
+        <div class="info-row"><span class="label">Device Type</span><span class="value" id="floatDeviceType">Raspberry Pi 4</span></div>
+        <div class="info-row"><span class="label">Last Update</span><span class="value" id="floatLastUpdate">—</span></div>
+        <div class="info-row"><span class="label">Speed</span><span class="value" id="floatSpeed">—</span></div>
+        <div class="info-row"><span class="label">Coordinates</span><span class="value" id="floatCoords">—</span></div>
+        <div class="section-title connectivity-block">Connectivity Status</div>
+        <div class="info-row"><span class="label">Operator</span><span class="value" id="floatOperator">—</span></div>
+        <div class="info-row"><span class="label">Connection</span><span class="value" id="floatConnection">—</span></div>
+        <div class="info-row"><span class="label">Modem</span><span class="value" id="floatModem">—</span></div>
+      </div>
+    </div>
   </div>
 
   <!-- ════ SMS PANEL ════ -->
@@ -1133,36 +1277,6 @@
     </div>
   </div>
 
-  <!-- RIGHT INFO PANEL (visible only on GPS) -->
-  <aside class="info-panel" id="rightPanel">
-    <div class="section-label">Track Log</div>
-    <div id="trackLogList" style="flex:1;overflow-y:auto">
-      <div style="padding:12px 14px;font-size:.72rem;color:var(--muted)">Waiting for track data…</div>
-    </div>
-
-    <div class="section-label" style="margin-top:8px">GPS Summary</div>
-    <div style="padding:0 12px 12px">
-      <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:10px;padding:12px">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.7rem;color:var(--muted)">Track Points</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--text)" id="sum-pts">—</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.7rem;color:var(--muted)">Avg Speed</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--primary)" id="sum-avg-speed">—</span>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.7rem;color:var(--muted)">Max Speed</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--warning)" id="sum-max-speed">—</span>
-        </div>
-        <div style="display:flex;justify-content:space-between">
-          <span style="font-size:.7rem;color:var(--muted)">Satellites</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--text)" id="sum-sat">—</span>
-        </div>
-      </div>
-    </div>
-  </aside>
-
 </div><!-- /main -->
 
 <script>
@@ -1182,7 +1296,6 @@
     document.getElementById(panels[name]).classList.add('active');
     document.getElementById(navBtns[name]).classList.add('active');
     document.getElementById(sidebarCtx[name]).style.display = 'block';
-    document.getElementById('rightPanel').style.display = name === 'gps' ? 'flex' : 'none';
     currentPanel = name;
     if (name === 'gps') {
       setTimeout(() => { if (typeof map !== 'undefined') map.invalidateSize(); }, 50);

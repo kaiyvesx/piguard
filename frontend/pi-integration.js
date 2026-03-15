@@ -18,8 +18,10 @@
   let lastBase = null;
   let contacts = [];
   let lastMessagesData = { sms: [] };
+  let lastStatusData = null;
   let trackPolyline = null;
   let piCarMarker = null;
+  let lastPanelData = null; // { gps, track, lat, lon, speed, satCount, locEl } for re-fill when panel opens
 
   function setConnectionState(connected, message) {
     if (!connStatusEl) return;
@@ -189,6 +191,86 @@
     if (onlineEl) onlineEl.textContent = String(contacts.length);
   }
 
+  function openDevicePanel() {
+    const panel = document.getElementById('devicePanelFloat');
+    if (panel) {
+      if (lastPanelData) {
+        const locEl = document.getElementById('gps-location');
+        updateFloatingDevicePanel(
+          lastPanelData.gps,
+          lastPanelData.track,
+          lastStatusData,
+          lastPanelData.lat,
+          lastPanelData.lon,
+          lastPanelData.speed,
+          lastPanelData.satCount,
+          locEl
+        );
+      }
+      panel.classList.add('open');
+      panel.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function closeDevicePanel() {
+    const panel = document.getElementById('devicePanelFloat');
+    if (panel) {
+      panel.classList.remove('open');
+      panel.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function updateFloatingDevicePanel(gps, track, statusData, lat, lon, speed, satCount, locEl) {
+    const st = statusData || {};
+    const hb = st.heartbeat || {};
+    const points = track && Array.isArray(track.points) ? track.points : [];
+    const lastTs = points.length > 0 ? points[points.length - 1].ts : hb.last_seen_ts || null;
+    let lastUpdateLabel = '—';
+    if (lastTs) {
+      const diff = Math.round((Date.now() - new Date(lastTs).getTime()) / 1000);
+      if (diff < 10) lastUpdateLabel = 'Just now';
+      else if (diff < 60) lastUpdateLabel = `${diff}s ago`;
+      else if (diff < 3600) lastUpdateLabel = `${Math.floor(diff / 60)}m ago`;
+      else lastUpdateLabel = `${Math.floor(diff / 3600)}h ago`;
+    }
+    const statusText = (hb.status && String(hb.status)) || '—';
+    const statusClass = /online/i.test(statusText) ? 'online' : (/moving/i.test(statusText) ? 'moving' : 'offline');
+    let connectionLabel = '—';
+    const cgpaddrRaw = st.CGPADDR ? String(st.CGPADDR) : '';
+    const ipMatch = cgpaddrRaw.match(/,(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+    const parsedIp = ipMatch ? ipMatch[1] : '';
+    if (parsedIp && parsedIp !== '0.0.0.0') connectionLabel = `Cellular / IP: ${parsedIp}`;
+    else if (st.CREG_MEANING) connectionLabel = String(st.CREG_MEANING);
+    else if (cgpaddrRaw) connectionLabel = 'Cellular (no data IP)';
+    const modemLabel = (st.CSQ_MEANING && String(st.CSQ_MEANING)) || (st.AT_MEANING && String(st.AT_MEANING)) || '—';
+    const netLog = st.latest_network_log;
+    let operatorLabel = (netLog && netLog.operator && String(netLog.operator).trim()) ? String(netLog.operator).trim() : '—';
+    if (operatorLabel === '—' && st.COPS) {
+      const m = String(st.COPS).match(/,\s*"([^"]+)"/);
+      if (m) operatorLabel = m[1];
+    }
+    const coordsLabel = (lat != null && lon != null) ? `${lat.toFixed(5)} N, ${lon.toFixed(5)} E` : '—';
+    const locLabel = (locEl && locEl.textContent && locEl.textContent.trim()) ? locEl.textContent.trim() : coordsLabel;
+
+    const set = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text != null && text !== '' ? String(text) : '—';
+    };
+    set('floatDeviceName', 'RPI-01');
+    set('floatDeviceSub', 'Raspberry Pi GPS Tracker');
+    set('floatLastUpdate', lastUpdateLabel);
+    set('floatSpeed', lat != null ? `${Number(speed || 0).toFixed(0)} km/h` : '—');
+    set('floatCoords', locLabel);
+    set('floatOperator', operatorLabel);
+    set('floatConnection', connectionLabel);
+    set('floatModem', modemLabel);
+    set('floatDeviceType', 'Raspberry Pi 4');
+    const statusWrap = document.getElementById('floatDeviceStatus');
+    const statusTextEl = document.getElementById('floatDeviceStatusText');
+    if (statusWrap) statusWrap.className = 'device-status ' + statusClass;
+    if (statusTextEl) statusTextEl.textContent = statusText;
+  }
+
   function updateGpsFromBackend(gps, track) {
     // --- determine best position ---
     let lat = null, lon = null, speed = 0;
@@ -252,71 +334,30 @@
       coordUpdEl.textContent = diff < 60 ? `Updated ${diff}s ago` : diff < 3600 ? `Updated ${Math.floor(diff/60)}m ago` : `Updated ${Math.floor(diff/3600)}h ago`;
     }
 
-    // --- right panel track log (last 8 points) ---
-    const trackLogEl = document.getElementById('trackLogList');
-    if (trackLogEl && points.length > 0) {
-      const recent = points.slice(-8).reverse();
-      trackLogEl.innerHTML = recent.map((p, i) => {
-        const isLatest = i === 0;
-        const pLat = parseFloat(p.lat);
-        const pLon = parseFloat(p.lon);
-        const key = `${pLat.toFixed(3)},${pLon.toFixed(3)}`;
-        const cached = _geocodeCache.get(key);
-        const fallback = `${pLat.toFixed(4)}°, ${pLon.toFixed(4)}°`;
-        return `<div class="route-step${isLatest ? ' active' : ''}">
-          <div class="step-num${isLatest ? '' : ' done'}" style="font-size:.6rem">${isLatest ? '●' : '○'}</div>
-          <div class="step-body">
-            <div class="step-road js-track-place" data-gk="${key}" style="font-size:.72rem">${escapeHtml(cached || fallback)}</div>
-            <div class="step-inst">${fmtTime(p.ts)} · ${parseFloat(p.speed||0).toFixed(1)} km/h</div>
-          </div>
-          <div class="step-meta"><div class="step-km" style="font-size:.62rem">${p.sat} sat</div></div>
-        </div>`;
-      }).join('');
+    // --- floating device panel content (updated every refresh; re-filled when panel opens) ---
+    lastPanelData = { gps, track, lat, lon, speed, satCount };
+    updateFloatingDevicePanel(gps, track, lastStatusData, lat, lon, speed, satCount, locEl);
 
-      // Resolve human-readable place names for rows that are still showing fallback coords.
-      recent.forEach((p) => {
-        const pLat = parseFloat(p.lat);
-        const pLon = parseFloat(p.lon);
-        const key = `${pLat.toFixed(3)},${pLon.toFixed(3)}`;
-        if (_geocodeCache.has(key)) return;
-        reverseGeocode(pLat, pLon).then((name) => {
-          if (!name || !trackLogEl) return;
-          trackLogEl.querySelectorAll(`.js-track-place[data-gk="${key}"]`).forEach((el) => {
-            el.textContent = name;
-          });
-        });
-      });
-    }
-
-    // --- right panel GPS summary ---
-    const sumPts      = document.getElementById('sum-pts');
-    const sumAvg      = document.getElementById('sum-avg-speed');
-    const sumMax      = document.getElementById('sum-max-speed');
-    const sumSat      = document.getElementById('sum-sat');
-    if (points.length > 0) {
-      const speeds = points.map(p => parseFloat(p.speed||0));
-      const avg = (speeds.reduce((a,b)=>a+b,0) / speeds.length).toFixed(1);
-      const max = Math.max(...speeds).toFixed(1);
-      if (sumPts) sumPts.textContent = String(track ? track.count || points.length : points.length);
-      if (sumAvg) sumAvg.textContent = `${avg} km/h`;
-      if (sumMax) sumMax.textContent = `${max} km/h`;
-      if (sumSat) sumSat.textContent = String(points[points.length-1].sat || '—');
-    }
-
-    // --- draw GPS track polyline ---
+    // --- draw track log polyline (blue line on map) ---
     if (points.length > 1 && typeof map !== 'undefined') {
       const latlngs = points.map(p => [parseFloat(p.lat), parseFloat(p.lon)]);
       if (trackPolyline) {
         trackPolyline.setLatLngs(latlngs);
       } else {
         trackPolyline = L.polyline(latlngs, {
-          color: '#00c8ff', weight: 4, opacity: 0.85,
-          lineJoin: 'round', lineCap: 'round',
+          color: '#00c8ff',
+          weight: 4,
+          opacity: 0.85,
+          lineJoin: 'round',
+          lineCap: 'round',
         }).addTo(map);
       }
     }
 
     // --- move/create Pi vehicle marker ---
+    const lastOnlineAgo = (lastStatusData && lastStatusData.heartbeat && lastStatusData.heartbeat.last_online_ago)
+      ? String(lastStatusData.heartbeat.last_online_ago)
+      : '—';
     if (lat !== null && lon !== null && typeof map !== 'undefined') {
       if (piCarMarker) {
         piCarMarker.setLatLng([lat, lon]);
@@ -327,20 +368,20 @@
           iconSize: [28, 28], iconAnchor: [14, 14],
         });
         piCarMarker = L.marker([lat, lon], { icon }).addTo(map);
+        piCarMarker.bindTooltip('', {
+          direction: 'top',
+          permanent: false,
+          className: 'marker-tooltip-last-seen',
+          offset: [0, -24],
+        });
+        piCarMarker.on('click', function onMarkerClick() {
+          openDevicePanel();
+          if (piCarMarker && piCarMarker.getTooltip()) piCarMarker.openTooltip();
+        });
       }
-
-      // update popup with last-seen time
-      const lastTs = points.length > 0 ? points[points.length - 1].ts : null;
-      let sinceLabel = 'unknown time';
-      if (lastTs) {
-        const diff = Math.round((Date.now() - new Date(lastTs).getTime()) / 1000);
-        if (diff < 60)        sinceLabel = `${diff}s ago`;
-        else if (diff < 3600) sinceLabel = `${Math.floor(diff / 60)}m ago`;
-        else                  sinceLabel = `${Math.floor(diff / 3600)}h ago`;
+      if (piCarMarker && piCarMarker.getTooltip()) {
+        piCarMarker.setTooltipContent(`Last seen: ${lastOnlineAgo}`);
       }
-      const popupHtml = `<b>Here for ${sinceLabel}</b><br><span style="font-size:.8em;color:#666">${lat.toFixed(5)}° N · ${lon.toFixed(5)}° E</span>`;
-      if (piCarMarker.getPopup()) piCarMarker.setPopupContent(popupHtml);
-      else piCarMarker.bindPopup(popupHtml);
 
       // pan map to Pi position
       const follow = document.getElementById('btnFollow');
@@ -381,13 +422,15 @@
       }
       setConnectionState(true, `Connected: ${base}`);
 
-      const [gps, track, contactData, messagesData] = await Promise.all([
+      const [gps, track, contactData, messagesData, statusData] = await Promise.all([
         api.getGpsLatest(),
         api.getGpsTrack(),
         api.getContacts(),
         api.getMessages(),
+        api.getStatus(),
       ]);
 
+      lastStatusData = statusData && typeof statusData === 'object' ? statusData : null;
       updateGpsFromBackend(gps, track);
 
       contacts = Array.isArray(contactData && contactData.contacts) ? contactData.contacts : [];
@@ -398,6 +441,7 @@
     } catch (err) {
       const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
       setConnectionState(false, `Offline: ${reason}`);
+      lastStatusData = null;
     }
   }
 
@@ -438,6 +482,11 @@
         onSend();
       }
     });
+  }
+
+  const devicePanelClose = document.getElementById('devicePanelClose');
+  if (devicePanelClose) {
+    devicePanelClose.addEventListener('click', closeDevicePanel);
   }
 
   refreshFromPi();
