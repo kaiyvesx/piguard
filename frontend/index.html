@@ -20,6 +20,23 @@
       --card-border:#1a3050;
       --text:       #e8f4fd;
       --muted:      #6b8cae;
+      --surface-1:  #0a1e36;
+      --surface-2:  #0d2540;
+    }
+
+    body[data-theme="light"] {
+      --primary:     #0089c7;
+      --secondary:   #eef4fb;
+      --accent:      #ef6c35;
+      --success:     #1c9d58;
+      --warning:     #cc8a00;
+      --danger:      #d93046;
+      --card-bg:     #ffffff;
+      --card-border: #d5e2f2;
+      --text:        #13263d;
+      --muted:       #5e748f;
+      --surface-1:   #f6faff;
+      --surface-2:   #eaf3ff;
     }
 
     body {
@@ -30,6 +47,7 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      transition: background .25s ease, color .25s ease;
     }
 
     /* ─── TOP NAV ─── */
@@ -57,7 +75,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 24px;
       padding: 6px 16px;
@@ -74,7 +92,7 @@
     .header-center input::placeholder { color: var(--muted); }
     .header-right { display: flex; align-items: center; gap: 12px; }
     .btn-icon {
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 50%;
       width: 36px; height: 36px;
@@ -134,7 +152,7 @@
       padding: 10px 4px;
       border-radius: 10px;
       border: 1px solid var(--card-border);
-      background: #0a1e36;
+      background: var(--surface-1);
       cursor: pointer;
       color: var(--muted);
       transition: all .2s;
@@ -145,7 +163,7 @@
       user-select: none;
     }
     .nav-btn svg { width: 20px; height: 20px; }
-    .nav-btn:hover { border-color: var(--primary); color: var(--primary); background: #0d2540; }
+    .nav-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--surface-2); }
     .nav-btn.active {
       background: var(--primary);
       border-color: var(--primary);
@@ -255,7 +273,7 @@
     /* Alerts */
     .alert-item {
       margin: 0 12px 8px;
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-left: 3px solid var(--warning);
       border-radius: 8px;
@@ -266,7 +284,7 @@
       cursor: pointer;
       transition: background .2s;
     }
-    .alert-item:hover { background: #0d2540; }
+    .alert-item:hover { background: var(--surface-2); }
     .alert-item.danger { border-left-color: var(--danger); }
     .alert-item.info   { border-left-color: var(--primary); }
     .alert-icon { font-size: 1.1rem; flex-shrink: 0; }
@@ -283,7 +301,7 @@
       padding: 0 12px 12px;
     }
     .nearby-card {
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 10px;
       padding: 10px;
@@ -291,7 +309,7 @@
       cursor: pointer;
       transition: all .2s;
     }
-    .nearby-card:hover { border-color: var(--primary); background: #0d2540; }
+    .nearby-card:hover { border-color: var(--primary); background: var(--surface-2); }
     .nearby-icon { font-size: 1.4rem; margin-bottom: 4px; }
     .nearby-name { font-size: 0.7rem; color: var(--muted); }
     .nearby-dist { font-size: 0.65rem; color: var(--primary); margin-top: 2px; }
@@ -437,8 +455,7 @@
       animation: pulse 2s infinite;
     }
 
-    /* Leaflet dark overrides */
-    .leaflet-tile { filter: brightness(.65) invert(1) hue-rotate(180deg) saturate(.8); }
+    /* Leaflet overrides */
     .leaflet-control-zoom { display: none; }
     .leaflet-control-attribution { display: none; }
 
@@ -480,7 +497,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 8px;
       padding: 7px 10px;
@@ -506,7 +523,7 @@
       border-bottom: 1px solid var(--card-border);
       transition: background .15s;
     }
-    .contact-item:hover { background: #0a1e36; }
+    .contact-item:hover { background: var(--surface-1); }
     .contact-item.active { background: rgba(0,200,255,.08); border-left: 3px solid var(--primary); }
     .contact-avatar {
       width: 38px; height: 38px;
@@ -608,7 +625,7 @@
     }
     .compose-input {
       flex: 1;
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 20px;
       padding: 9px 16px;
@@ -648,7 +665,7 @@
     .camera-toolbar h2 { font-size: 0.9rem; font-weight: 700; color: var(--text); }
     .cam-toolbar-right { display: flex; gap: 8px; align-items: center; }
     .cam-chip {
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 6px;
       padding: 5px 10px;
@@ -776,7 +793,7 @@
       transition: background .15s;
       cursor: pointer;
     }
-    .route-step:hover { background: #0a1e36; }
+    .route-step:hover { background: var(--surface-1); }
     .route-step.active { background: rgba(0,200,255,.07); }
     .step-num {
       width: 22px; height: 22px;
@@ -800,7 +817,7 @@
     /* Traffic bar */
     .traffic-bar {
       margin: 0 12px 12px;
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 10px;
       padding: 12px;
@@ -818,7 +835,7 @@
     /* Weather */
     .weather-strip {
       margin: 0 12px 12px;
-      background: #0a1e36;
+      background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 10px;
       padding: 10px 12px;
@@ -867,7 +884,8 @@
 
   <div class="header-right">
     <div class="status-dot"></div>
-    <span style="font-size:.72rem;color:var(--success)">GPS Active</span>
+    <span id="piConnStatus" style="font-size:.72rem;color:var(--success)">GPS Active</span>
+    <button class="btn-icon" id="themeToggle" title="Switch to light mode" aria-label="Toggle theme"></button>
     <div class="btn-icon">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
@@ -913,154 +931,13 @@
     </div>
 
     <!-- ── GPS sidebar content ── -->
-    <div id="sidebarGps">
-      <div class="section-label">Active Trip</div>
-      <div class="trip-card">
-        <div class="trip-dest">Intramuros, Manila</div>
-        <div class="trip-sub">Via Roxas Blvd — Fastest Route</div>
-        <div class="trip-stats">
-          <div class="stat">
-            <div class="stat-value" id="stat-eta">14<sup style="font-size:.55rem">min</sup></div>
-            <div class="stat-label">ETA</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value" id="stat-dist">8.3<sup style="font-size:.55rem">km</sup></div>
-            <div class="stat-label">Distance</div>
-          </div>
-          <div class="stat">
-            <div class="stat-value" id="stat-arr">3:42<sup style="font-size:.55rem">pm</sup></div>
-            <div class="stat-label">Arrival</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-label">Speed</div>
-      <div class="speed-gauge">
-        <div class="gauge-circle">
-          <svg width="72" height="72" viewBox="0 0 72 72">
-            <circle class="gauge-bg" cx="36" cy="36" r="27"/>
-            <circle class="gauge-fill" id="gaugeFill" cx="36" cy="36" r="27"/>
-          </svg>
-          <div class="gauge-text">
-            <div id="speedNum">42</div>
-            <span>km/h</span>
-          </div>
-        </div>
-        <div class="speed-info">
-          <div class="speed-label">Speed Limit</div>
-          <div class="speed-limit">60</div>
-          <div class="speed-status" id="speedStatus">Within limit</div>
-        </div>
-      </div>
-
-      <div class="section-label">Traffic Condition</div>
-      <div class="traffic-bar">
-        <div class="traffic-title">Route traffic — mostly light</div>
-        <div class="traffic-segments">
-          <div class="seg" style="flex:2;background:#00e676"></div>
-          <div class="seg" style="flex:1;background:#ffb300"></div>
-          <div class="seg" style="flex:3;background:#00e676"></div>
-          <div class="seg" style="flex:1;background:#ff3d57"></div>
-          <div class="seg" style="flex:2;background:#00e676"></div>
-        </div>
-      </div>
-
-      <div class="section-label">Weather</div>
-      <div class="weather-strip">
-        <div class="weather-left">
-          <div class="weather-icon">&#x26C5;</div>
-          <div>
-            <div class="weather-val">29°C</div>
-            <div class="weather-desc">Partly cloudy</div>
-          </div>
-        </div>
-        <div class="weather-right">
-          <div class="weather-extra">Humidity: 78%</div>
-          <div class="weather-extra">Wind: 12 km/h</div>
-          <div class="weather-extra">Visibility: Good</div>
-        </div>
-      </div>
-
-      <div class="section-label">Alerts Ahead</div>
-      <div class="alert-item">
-        <div class="alert-icon">&#x26A0;&#xFE0F;</div>
-        <div class="alert-body">
-          <div class="alert-title">Heavy Traffic</div>
-          <div class="alert-desc">EDSA–Taft intersection — 2.1 km ahead</div>
-        </div>
-        <div class="alert-time">2 min</div>
-      </div>
-      <div class="alert-item danger">
-        <div class="alert-icon">&#x1F6A7;</div>
-        <div class="alert-body">
-          <div class="alert-title">Road Work</div>
-          <div class="alert-desc">Roxas Blvd — right lane closed</div>
-        </div>
-        <div class="alert-time">5 min</div>
-      </div>
-      <div class="alert-item info">
-        <div class="alert-icon">&#x26FD;</div>
-        <div class="alert-body">
-          <div class="alert-title">Gas Station</div>
-          <div class="alert-desc">Petron — 400m off route</div>
-        </div>
-        <div class="alert-time">—</div>
-      </div>
-
-      <div class="section-label">Nearby</div>
-      <div class="nearby-grid">
-        <div class="nearby-card"><div class="nearby-icon">&#x1F354;</div><div class="nearby-name">Food</div><div class="nearby-dist">0.3 km</div></div>
-        <div class="nearby-card"><div class="nearby-icon">&#x26FD;</div><div class="nearby-name">Gas</div><div class="nearby-dist">0.8 km</div></div>
-        <div class="nearby-card"><div class="nearby-icon">&#x1F17F;&#xFE0F;</div><div class="nearby-name">Parking</div><div class="nearby-dist">1.2 km</div></div>
-        <div class="nearby-card"><div class="nearby-icon">&#x1F3E5;</div><div class="nearby-name">Hospital</div><div class="nearby-dist">2.0 km</div></div>
-      </div>
-    </div>
+    <div id="sidebar-gps-wrap"></div>
 
     <!-- ── SMS sidebar content ── -->
-    <div id="sidebarSms" style="display:none">
-      <div class="section-label">Contacts</div>
-      <div style="padding:0 12px 8px">
-        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px">
-          <div style="font-size:.7rem;color:var(--muted);margin-bottom:6px">Quick Stats</div>
-          <div style="display:flex;justify-content:space-between">
-            <div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--primary)">12</div><div style="font-size:.6rem;color:var(--muted)">Unread</div></div>
-            <div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--text)">48</div><div style="font-size:.6rem;color:var(--muted)">Total</div></div>
-            <div style="text-align:center"><div style="font-size:1rem;font-weight:700;color:var(--success)">5</div><div style="font-size:.6rem;color:var(--muted)">Online</div></div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div id="sidebar-sms-wrap"></div>
 
     <!-- ── Camera sidebar content ── -->
-    <div id="sidebarCamera" style="display:none">
-      <div class="section-label">Camera Status</div>
-      <div style="padding:0 12px 8px;display:flex;flex-direction:column;gap:8px">
-        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 1 — Front</div>
-          <span class="cam-status online">Online</span>
-        </div>
-        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 2 — Rear</div>
-          <span class="cam-status online">Online</span>
-        </div>
-        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 3 — Left</div>
-          <span class="cam-status online">Online</span>
-        </div>
-        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 4 — Right</div>
-          <span class="cam-status offline">Offline</span>
-        </div>
-      </div>
-      <div class="section-label">Recording</div>
-      <div style="padding:0 12px 12px">
-        <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:8px;padding:12px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:.7rem;color:var(--muted)">Storage Used</span><span style="font-size:.75rem;font-weight:600;color:var(--text)">14.2 GB</span></div>
-          <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden;margin-bottom:8px"><div style="width:57%;height:100%;background:var(--primary)"></div></div>
-          <div style="display:flex;justify-content:space-between"><span style="font-size:.7rem;color:var(--muted)">Resolution</span><span style="font-size:.75rem;font-weight:600;color:var(--text)">1080p</span></div>
-        </div>
-      </div>
-    </div>
+    <div id="sidebar-camera-wrap"></div>
 
   </aside>
 
@@ -1109,14 +986,14 @@
 
     <div class="bottom-bar">
       <div class="nav-current">
-        <div class="turn-icon">&#x21B1;</div>
+        <div class="turn-icon">&#x1F4CD;</div>
         <div class="turn-text">
-          <div class="turn-action">Turn right onto</div>
-          <div class="turn-road">Roxas Boulevard</div>
-          <div class="turn-dist">In 350 m</div>
+          <div class="turn-action" id="live-coord-label">Live coordinates</div>
+          <div class="turn-road" id="live-coord-value" style="font-size:.82rem">Waiting for GPS…</div>
+          <div class="turn-dist" id="live-last-update">—</div>
         </div>
       </div>
-      <button class="btn-reroute" onclick="rerouteAlert()">Re-route</button>
+      <button class="btn-reroute" onclick="rerouteAlert()">Clear Track</button>
       <button class="btn-stop" onclick="stopNav()">Stop</button>
     </div>
   </div>
@@ -1126,7 +1003,7 @@
     <div class="sms-list">
       <div class="sms-list-header">
         <h2>Messages</h2>
-        <span class="badge">3</span>
+        <span class="badge" id="smsBadge">0</span>
       </div>
       <div class="sms-search">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="2">
@@ -1134,78 +1011,17 @@
         </svg>
         <input type="text" placeholder="Search messages..." />
       </div>
-      <div class="sms-contacts">
-        <div class="contact-item active">
-          <div class="contact-avatar">JD</div>
-          <div class="contact-info">
-            <div class="contact-name">Juan Dela Cruz</div>
-            <div class="contact-preview">Already at the checkpoint, over.</div>
-          </div>
-          <div class="contact-meta">
-            <div class="contact-time">2m ago</div>
-          </div>
-        </div>
-        <div class="contact-item">
-          <div class="contact-avatar">MR</div>
-          <div class="contact-info">
-            <div class="contact-name">Maria Reyes</div>
-            <div class="contact-preview">Traffic along EDSA, rerouting now.</div>
-          </div>
-          <div class="contact-meta">
-            <div class="contact-time">15m</div>
-            <div class="contact-unread">2</div>
-          </div>
-        </div>
-        <div class="contact-item">
-          <div class="contact-avatar">CS</div>
-          <div class="contact-info">
-            <div class="contact-name">Control Station</div>
-            <div class="contact-preview">Unit 4 has reached waypoint B.</div>
-          </div>
-          <div class="contact-meta">
-            <div class="contact-time">32m</div>
-            <div class="contact-unread">1</div>
-          </div>
-        </div>
-        <div class="contact-item">
-          <div class="contact-avatar">AR</div>
-          <div class="contact-info">
-            <div class="contact-name">Allan Ramos</div>
-            <div class="contact-preview">ETA to base: 20 minutes.</div>
-          </div>
-          <div class="contact-meta">
-            <div class="contact-time">1h</div>
-          </div>
-        </div>
-        <div class="contact-item">
-          <div class="contact-avatar">HQ</div>
-          <div class="contact-info">
-            <div class="contact-name">Headquarters</div>
-            <div class="contact-preview">All units report status by 1800h.</div>
-          </div>
-          <div class="contact-meta">
-            <div class="contact-time">2h</div>
-          </div>
-        </div>
-        <div class="contact-item">
-          <div class="contact-avatar">TS</div>
-          <div class="contact-info">
-            <div class="contact-name">Tracker System</div>
-            <div class="contact-preview">GPS signal restored on Unit 7.</div>
-          </div>
-          <div class="contact-meta">
-            <div class="contact-time">3h</div>
-          </div>
-        </div>
+      <div class="sms-contacts" id="smsContactsList">
+        <div style="padding:12px 14px;color:var(--muted);font-size:.72rem">Loading contacts from backend...</div>
       </div>
     </div>
 
     <div class="sms-thread">
       <div class="thread-header">
-        <div class="thread-avatar">JD</div>
+        <div class="thread-avatar" id="smsThreadAvatar">--</div>
         <div style="flex:1">
-          <div class="thread-name">Juan Dela Cruz</div>
-          <div class="thread-sub">&#x25CF; Online · Unit 3 · GPS Active</div>
+          <div class="thread-name" id="smsThreadName">No contact selected</div>
+          <div class="thread-sub" id="smsThreadSub">Waiting for Pi contacts...</div>
         </div>
         <div style="display:flex;gap:8px">
           <div class="btn-icon" style="width:32px;height:32px">
@@ -1221,37 +1037,13 @@
         </div>
       </div>
 
-      <div class="messages-area">
-        <div class="date-divider">Today, March 11</div>
-        <div class="msg in">
-          <div class="msg-bubble">Unit 3 reporting. Departed base at 0820h, heading to Roxas Blvd checkpoint.</div>
-          <div class="msg-time">08:21 AM</div>
-        </div>
-        <div class="msg out">
-          <div class="msg-bubble">Copy that. Maintain current speed and report at each waypoint.</div>
-          <div class="msg-time">08:23 AM</div>
-        </div>
-        <div class="msg in">
-          <div class="msg-bubble">Roger. Waypoint Alpha cleared.</div>
-          <div class="msg-time">08:45 AM</div>
-        </div>
-        <div class="msg out">
-          <div class="msg-bubble">Confirmed. Traffic advisory: heavy congestion on EDSA–Taft. Suggest alternate via A. Mabini.</div>
-          <div class="msg-time">08:47 AM</div>
-        </div>
-        <div class="msg in">
-          <div class="msg-bubble">Switching to alternate route now. GPS recalculating.</div>
-          <div class="msg-time">08:49 AM</div>
-        </div>
-        <div class="msg in">
-          <div class="msg-bubble">Already at the checkpoint, over.</div>
-          <div class="msg-time">09:12 AM · Just now</div>
-        </div>
+      <div class="messages-area" id="smsMessagesArea">
+        <div class="date-divider">Loading backend SMS log...</div>
       </div>
 
       <div class="compose-area">
-        <input class="compose-input" type="text" placeholder="Type a message..." />
-        <button class="btn-send">
+        <input class="compose-input" id="smsComposeInput" type="text" placeholder="Type a message..." />
+        <button class="btn-send" id="smsSendBtn" title="Send message">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0a1628" stroke-width="2.5">
             <line x1="22" y1="2" x2="11" y2="13"/>
             <polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -1343,61 +1135,30 @@
 
   <!-- RIGHT INFO PANEL (visible only on GPS) -->
   <aside class="info-panel" id="rightPanel">
-    <div class="section-label">Turn-by-Turn</div>
-    <div class="route-step done">
-      <div class="step-num done">✓</div>
-      <div class="step-body"><div class="step-road">Taft Avenue</div><div class="step-inst">Head north</div></div>
-      <div class="step-meta"><div class="step-km">1.2 km</div><div class="step-min">Done</div></div>
-    </div>
-    <div class="route-step done">
-      <div class="step-num done">✓</div>
-      <div class="step-body"><div class="step-road">A. Mabini St.</div><div class="step-inst">Turn right</div></div>
-      <div class="step-meta"><div class="step-km">0.4 km</div><div class="step-min">Done</div></div>
-    </div>
-    <div class="route-step active">
-      <div class="step-num">3</div>
-      <div class="step-body"><div class="step-road">Roxas Blvd</div><div class="step-inst">Turn right &middot; Now</div></div>
-      <div class="step-meta"><div class="step-km">3.1 km</div><div class="step-min">~4 min</div></div>
-    </div>
-    <div class="route-step">
-      <div class="step-num">4</div>
-      <div class="step-body"><div class="step-road">P. Burgos St.</div><div class="step-inst">Turn left</div></div>
-      <div class="step-meta"><div class="step-km">0.6 km</div><div class="step-min">~2 min</div></div>
-    </div>
-    <div class="route-step">
-      <div class="step-num">5</div>
-      <div class="step-body"><div class="step-road">Gen. Luna St.</div><div class="step-inst">Turn right</div></div>
-      <div class="step-meta"><div class="step-km">0.9 km</div><div class="step-min">~2 min</div></div>
-    </div>
-    <div class="route-step">
-      <div class="step-num">6</div>
-      <div class="step-body"><div class="step-road">Intramuros</div><div class="step-inst">You have arrived</div></div>
-      <div class="step-meta"><div class="step-km">—</div><div class="step-min">Dest.</div></div>
+    <div class="section-label">Track Log</div>
+    <div id="trackLogList" style="flex:1;overflow-y:auto">
+      <div style="padding:12px 14px;font-size:.72rem;color:var(--muted)">Waiting for track data…</div>
     </div>
 
-    <div class="section-label" style="margin-top:8px">Route Summary</div>
+    <div class="section-label" style="margin-top:8px">GPS Summary</div>
     <div style="padding:0 12px 12px">
-      <div style="background:#0a1e36;border:1px solid var(--card-border);border-radius:10px;padding:12px">
+      <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:10px;padding:12px">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.7rem;color:var(--muted)">Total Distance</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--text)">8.3 km</span>
+          <span style="font-size:.7rem;color:var(--muted)">Track Points</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--text)" id="sum-pts">—</span>
         </div>
         <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.7rem;color:var(--muted)">Remaining</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--primary)" id="distRemaining">5.1 km</span>
+          <span style="font-size:.7rem;color:var(--muted)">Avg Speed</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--primary)" id="sum-avg-speed">—</span>
         </div>
         <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:.7rem;color:var(--muted)">Traffic Delay</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--warning)">+3 min</span>
+          <span style="font-size:.7rem;color:var(--muted)">Max Speed</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--warning)" id="sum-max-speed">—</span>
         </div>
         <div style="display:flex;justify-content:space-between">
-          <span style="font-size:.7rem;color:var(--muted)">Avg Speed</span>
-          <span style="font-size:.78rem;font-weight:600;color:var(--text)">34 km/h</span>
+          <span style="font-size:.7rem;color:var(--muted)">Satellites</span>
+          <span style="font-size:.78rem;font-weight:600;color:var(--text)" id="sum-sat">—</span>
         </div>
-        <div style="margin-top:10px;background:var(--card-border);border-radius:4px;height:4px;overflow:hidden">
-          <div id="progressBar" style="width:38%;height:100%;background:var(--primary);border-radius:4px;transition:width 1s"></div>
-        </div>
-        <div style="font-size:.6rem;color:var(--muted);margin-top:4px;text-align:right" id="progressPct">38% complete</div>
       </div>
     </div>
   </aside>
@@ -1436,119 +1197,72 @@
     attributionControl: false
   }).setView([14.5820, 120.9865], 14);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
-  }).addTo(map);
+  // Keep map in a clear light style to match road-map references/screenshots.
+  const darkTileUrl  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const lightTileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  const tileOptions  = { maxZoom: 19, subdomains: 'abcd' };
 
-  const routeCoords = [
-    [14.5650, 120.9920],
-    [14.5720, 120.9880],
-    [14.5790, 120.9840],
-    [14.5870, 120.9810],
-    [14.5920, 120.9840],
-    [14.5960, 120.9860],
-    [14.5995, 120.9842]
-  ];
+  let tileLayer = L.tileLayer(lightTileUrl, tileOptions).addTo(map);
 
-  L.polyline(routeCoords.slice(0, 4), { color: '#1a3050', weight: 6, opacity: .8, lineJoin: 'round', lineCap: 'round' }).addTo(map);
-  L.polyline(routeCoords.slice(3),    { color: '#00c8ff', weight: 6, opacity: .85, lineJoin: 'round', lineCap: 'round' }).addTo(map);
-
-  const destIcon = L.divIcon({
-    className: '',
-    html: `<div style="width:32px;height:32px;border-radius:50% 50% 50% 0;background:#ff3d57;border:3px solid #fff;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(255,61,87,.6)"></div>`,
-    iconSize: [32, 32], iconAnchor: [16, 32]
-  });
-  L.marker(routeCoords[routeCoords.length - 1], { icon: destIcon }).addTo(map)
-    .bindPopup('<b>Intramuros, Manila</b><br>Your destination');
-
-  const carIcon = L.divIcon({
-    className: '',
-    html: `<div style="width:28px;height:28px;border-radius:50%;background:#00c8ff;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:0 0 0 6px rgba(0,200,255,.25),0 2px 10px rgba(0,200,255,.5)">&#x1F697;</div>`,
-    iconSize: [28, 28], iconAnchor: [14, 14]
-  });
-
-  let carIdx = 3;
-  const carMarker = L.marker(routeCoords[carIdx], { icon: carIcon }).addTo(map);
-
-  [
-    { latlng: [14.5760, 120.9855], icon: '&#x26A0;&#xFE0F;', label: 'Heavy Traffic' },
-    { latlng: [14.5840, 120.9820], icon: '&#x1F6A7;',         label: 'Road Work'    }
-  ].forEach(inc => {
-    L.marker(inc.latlng, {
-      icon: L.divIcon({
-        className: '',
-        html: `<div style="background:#ffb300;border-radius:8px;padding:3px 7px;font-size:12px;border:1px solid rgba(255,179,0,.5);box-shadow:0 2px 8px rgba(0,0,0,.4);white-space:nowrap;font-family:sans-serif;color:#0a1628;font-weight:700">${inc.icon} ${inc.label}</div>`,
-        iconAnchor: [0, 0]
-      })
-    }).addTo(map);
-  });
-
-  map.fitBounds(L.latLngBounds(routeCoords), { padding: [70, 70] });
-
-  function advanceCar() {
-    if (carIdx < routeCoords.length - 1) {
-      carIdx++;
-      carMarker.setLatLng(routeCoords[carIdx]);
-      const coord = routeCoords[carIdx];
-      document.getElementById('gpsCoords').textContent =
-        coord[0].toFixed(4) + '° N · ' + coord[1].toFixed(4) + '° E';
-      const pct = Math.round((carIdx / (routeCoords.length - 1)) * 100);
-      document.getElementById('progressBar').style.width = pct + '%';
-      document.getElementById('progressPct').textContent = pct + '% complete';
-      document.getElementById('distRemaining').textContent = ((1 - pct / 100) * 8.3).toFixed(1) + ' km';
-    }
+  function updateMapTiles(theme) {
+    // Intentionally keep a light basemap in both UI themes.
+    tileLayer.setUrl(lightTileUrl);
   }
-  setInterval(advanceCar, 10000);
 
-  // ── Speedometer ──
-  const circumference = 2 * Math.PI * 27;
-  const gaugeFill   = document.getElementById('gaugeFill');
-  const speedNum    = document.getElementById('speedNum');
-  const speedStatus = document.getElementById('speedStatus');
-  const speeds = [42, 38, 55, 48, 35, 50, 44, 30, 58, 46, 40, 52];
-  let sIdx = 0;
+  // Map starts centered on Philippines; pi-integration.js will pan to real GPS.
+  map.setView([12.8797, 121.7740], 6);
 
-  function updateSpeed() {
-    const sp = speeds[sIdx++ % speeds.length];
-    gaugeFill.style.strokeDashoffset = circumference * (1 - Math.min(sp / 80, 1));
-    speedNum.textContent = sp;
-    if (sp > 60) {
-      gaugeFill.style.stroke = 'var(--danger)';
-      speedStatus.style.color = 'var(--danger)';
-      speedStatus.textContent = 'Over limit!';
-    } else if (sp > 50) {
-      gaugeFill.style.stroke = 'var(--warning)';
-      speedStatus.style.color = 'var(--warning)';
-      speedStatus.textContent = 'Near limit';
-    } else {
-      gaugeFill.style.stroke = 'var(--primary)';
-      speedStatus.style.color = 'var(--success)';
-      speedStatus.textContent = 'Within limit';
+
+  // ── Speedometer & ETA (deferred — runs after GPS sidebar partial is injected) ──
+  function initGaugeParts() {
+    const circumference = 2 * Math.PI * 27;
+    const gaugeFill   = document.getElementById('gaugeFill');
+    const speedNum    = document.getElementById('speedNum');
+    const speedStatus = document.getElementById('speedStatus');
+    const speeds = [42, 38, 55, 48, 35, 50, 44, 30, 58, 46, 40, 52];
+    let sIdx = 0;
+
+    function updateSpeed() {
+      const sp = speeds[sIdx++ % speeds.length];
+      gaugeFill.style.strokeDashoffset = circumference * (1 - Math.min(sp / 80, 1));
+      speedNum.textContent = sp;
+      if (sp > 60) {
+        gaugeFill.style.stroke = 'var(--danger)';
+        speedStatus.style.color = 'var(--danger)';
+        speedStatus.textContent = 'Over limit!';
+      } else if (sp > 50) {
+        gaugeFill.style.stroke = 'var(--warning)';
+        speedStatus.style.color = 'var(--warning)';
+        speedStatus.textContent = 'Near limit';
+      } else {
+        gaugeFill.style.stroke = 'var(--primary)';
+        speedStatus.style.color = 'var(--success)';
+        speedStatus.textContent = 'Within limit';
+      }
     }
-  }
-  updateSpeed();
-  setInterval(updateSpeed, 3000);
+    updateSpeed();
+    setInterval(updateSpeed, 3000);
 
-  // ── ETA countdown ──
-  let etaMin = 14;
-  setInterval(() => {
-    if (etaMin > 1) {
-      etaMin--;
-      document.getElementById('stat-eta').innerHTML = `${etaMin}<sup style="font-size:.55rem">min</sup>`;
-      document.getElementById('stat-dist').innerHTML = `${(etaMin * 0.59).toFixed(1)}<sup style="font-size:.55rem">km</sup>`;
+    let etaMin = 14;
+    setInterval(() => {
+      if (etaMin > 1) {
+        etaMin--;
+        document.getElementById('stat-eta').innerHTML = `${etaMin}<sup style="font-size:.55rem">min</sup>`;
+        document.getElementById('stat-dist').innerHTML = `${(etaMin * 0.59).toFixed(1)}<sup style="font-size:.55rem">km</sup>`;
+      }
+    }, 8000);
+
+    function updateArrival() {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() + etaMin);
+      let h = now.getHours(), m = now.getMinutes();
+      const ampm = h >= 12 ? 'pm' : 'am';
+      h = h % 12 || 12;
+      document.getElementById('stat-arr').innerHTML = `${h}:${String(m).padStart(2,'0')}<sup style="font-size:.55rem">${ampm}</sup>`;
     }
-  }, 8000);
-
-  function updateArrival() {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + etaMin);
-    let h = now.getHours(), m = now.getMinutes();
-    const ampm = h >= 12 ? 'pm' : 'am';
-    h = h % 12 || 12;
-    document.getElementById('stat-arr').innerHTML = `${h}:${String(m).padStart(2,'0')}<sup style="font-size:.55rem">${ampm}</sup>`;
+    updateArrival();
+    setInterval(updateArrival, 60000);
   }
-  updateArrival();
-  setInterval(updateArrival, 60000);
 
   // ── Camera clock ──
   function updateCamTime() {
@@ -1580,6 +1294,52 @@
         '<div style="color:var(--danger);font-size:1rem">&#x25A0;</div>&nbsp;Navigation stopped';
     }
   }
+
+  // ══════════════════════════════════════════
+  //  THEME TOGGLE
+  // ══════════════════════════════════════════
+  const themeToggle = document.getElementById('themeToggle');
+  const THEME_KEY = 'admin-dashboard-theme';
+  const sunIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+  const moonIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3c0 .28.02.57.05.85A7 7 0 0021 12.79z"/></svg>';
+
+  function setTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    const isDark = theme === 'dark';
+    themeToggle.innerHTML = isDark ? sunIcon : moonIcon;
+    themeToggle.title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+    localStorage.setItem(THEME_KEY, theme);
+    if (typeof updateMapTiles === 'function') updateMapTiles(theme);
+  }
+
+  // Keep dashboard UI dark by default; map tiles stay light via updateMapTiles().
+  setTheme('dark');
+  themeToggle.addEventListener('click', () => {
+    const next = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+  });
+
+  // ══════════════════════════════════════════
+  //  LOAD SIDEBAR PARTIALS
+  // ══════════════════════════════════════════
+  async function loadSidebarPartials() {
+    const partials = [
+      { file: 'sidebar-function/sidebar-gps.html',    wrap: 'sidebar-gps-wrap'    },
+      { file: 'sidebar-function/sidebar-sms.html',    wrap: 'sidebar-sms-wrap'    },
+      { file: 'sidebar-function/sidebar-camera.html', wrap: 'sidebar-camera-wrap' },
+    ];
+    await Promise.all(partials.map(async ({ file, wrap }) => {
+      try {
+        const html = await fetch(file).then(r => r.text());
+        document.getElementById(wrap).innerHTML = html;
+      } catch (e) {
+        console.warn('Could not load sidebar partial:', file, e);
+      }
+    }));
+    initGaugeParts();
+  }
+  loadSidebarPartials();
 </script>
+<script src="pi-integration.js"></script>
 </body>
 </html>
