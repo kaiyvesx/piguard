@@ -491,4 +491,12 @@
 
   refreshFromPi();
   setInterval(refreshFromPi, 10000);
+
+  window.centerOnTracker = function () {
+    if (piCarMarker && typeof map !== 'undefined') {
+      map.setView(piCarMarker.getLatLng(), map.getMaxZoom(), { animate: true });
+    }
+  };
+
+  window.openDevicePanel = openDevicePanel;
 })();

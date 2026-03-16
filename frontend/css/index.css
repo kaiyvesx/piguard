@@ -82,6 +82,18 @@
       width: 100%;
     }
     .header-center input::placeholder { color: var(--muted); }
+    .header-center #searchBtn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      padding: 0;
+      flex-shrink: 0;
+      transition: color .15s;
+    }
+    .header-center #searchBtn:hover { color: var(--primary); }
     .header-right { display: flex; align-items: center; gap: 12px; }
     .btn-icon {
       background: var(--surface-1);
@@ -417,6 +429,24 @@
       padding-top: 14px;
       border-top: 1px solid var(--card-border);
     }
+    .btn-center-tracker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      width: 100%;
+      margin-top: 18px;
+      padding: 10px;
+      background: var(--primary);
+      color: var(--secondary);
+      border: none;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s;
+    }
+    .btn-center-tracker:hover { opacity: .85; }
 
     /* Map overlay controls */
     .map-controls {

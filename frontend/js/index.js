@@ -96,9 +96,71 @@ function initGaugeParts() {
 }
 
 // ── Map button toggles ──
-document.querySelectorAll('.map-btn').forEach(btn => {
+document.querySelectorAll('.map-btn:not([data-no-toggle])').forEach(btn => {
   btn.addEventListener('click', function () { this.classList.toggle('active'); });
 });
+
+// btnFollow: immediately re-center on tracker when follow mode is re-enabled
+const btnFollow = document.getElementById('btnFollow');
+if (btnFollow) {
+  btnFollow.addEventListener('click', function () {
+    if (this.classList.contains('active') && typeof centerOnTracker === 'function') centerOnTracker();
+  });
+}
+
+// btnCenter: one-shot center on current tracker position
+const btnCenter = document.getElementById('btnCenter');
+if (btnCenter) {
+  btnCenter.addEventListener('click', function () {
+    if (typeof centerOnTracker === 'function') centerOnTracker();
+    this.classList.add('active');
+    setTimeout(() => this.classList.remove('active'), 400);
+  });
+}
+
+// btnDeviceInfo: open floating device info panel
+const btnDeviceInfo = document.getElementById('btnDeviceInfo');
+if (btnDeviceInfo) {
+  btnDeviceInfo.addEventListener('click', function () {
+    if (typeof openDevicePanel === 'function') openDevicePanel();
+    this.classList.add('active');
+    setTimeout(() => this.classList.remove('active'), 400);
+  });
+}
+
+// ── Search ──
+async function searchPlace() {
+  const input = document.getElementById('searchInput');
+  const query = input ? input.value.trim() : '';
+  if (!query) return;
+
+  const toast = document.getElementById('liveToast');
+  const orig = toast.innerHTML;
+  toast.innerHTML = '<div class="status-dot"></div>&nbsp;Searching…';
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    );
+    const data = await res.json();
+    if (data.length) {
+      map.setView([parseFloat(data[0].lat), parseFloat(data[0].lon)], 16, { animate: true });
+      toast.innerHTML = orig;
+    } else {
+      toast.innerHTML = '<div style="color:var(--danger)">&#x26A0;</div>&nbsp;Place not found';
+      setTimeout(() => { toast.innerHTML = orig; }, 2500);
+    }
+  } catch {
+    toast.innerHTML = '<div style="color:var(--danger)">&#x26A0;</div>&nbsp;Search failed';
+    setTimeout(() => { toast.innerHTML = orig; }, 2500);
+  }
+}
+
+const searchBtn = document.getElementById('searchBtn');
+const searchInput = document.getElementById('searchInput');
+if (searchBtn) searchBtn.addEventListener('click', searchPlace);
+if (searchInput) searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchPlace(); });
 
 // ── Action buttons ──
 function rerouteAlert() {

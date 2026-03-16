@@ -26,7 +26,12 @@
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="2">
       <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
     </svg>
-    <input type="text" placeholder="Search destination..." value="Manila, Intramuros" />
+    <input type="text" id="searchInput" placeholder="Search destination..." />
+    <button id="searchBtn" title="Search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </button>
   </div>
 
   <div class="header-right">
@@ -98,37 +103,27 @@
     </div>
 
     <div class="map-controls">
-      <div class="map-btn active" id="btnFollow" title="Follow">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
-        </svg>
-      </div>
-      <div class="map-btn" id="btnLayers" title="Layers">
+      <div class="map-btn" id="btnCenter" data-no-toggle title="Center on tracker">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-          <polyline points="2 17 12 22 22 17"/>
-          <polyline points="2 12 12 17 22 12"/>
+          <circle cx="12" cy="12" r="3"/>
+          <line x1="12" y1="2" x2="12" y2="6"/>
+          <line x1="12" y1="18" x2="12" y2="22"/>
+          <line x1="2" y1="12" x2="6" y2="12"/>
+          <line x1="18" y1="12" x2="22" y2="12"/>
         </svg>
       </div>
-      <div class="map-btn" id="btnTraffic" title="Traffic">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="9" y="2" width="6" height="20" rx="3"/>
-          <circle cx="12" cy="7" r="1.5" fill="#ff3d57" stroke="none"/>
-          <circle cx="12" cy="12" r="1.5" fill="#ffb300" stroke="none"/>
-          <circle cx="12" cy="17" r="1.5" fill="#00e676" stroke="none"/>
-        </svg>
-      </div>
-      <div class="map-btn" id="btnCompass" title="Compass">
+      <div class="map-btn" id="btnDeviceInfo" data-no-toggle title="Device info">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"/>
-          <polygon points="16.24,7.76 14.12,14.12 7.76,16.24 9.88,9.88"/>
+          <line x1="12" y1="8" x2="12" y2="8" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="12" y1="12" x2="12" y2="16"/>
         </svg>
       </div>
     </div>
 
     <div class="gps-indicator">
       <div class="dot"></div>
-      <span id="gpsCoords">14.5870° N · 120.9810° E</span>
+      <span id="gpsCoords"></span>
     </div>
 
     <div class="bottom-bar">
