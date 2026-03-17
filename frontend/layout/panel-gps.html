@@ -1,0 +1,69 @@
+<!-- GPS / Map Panel -->
+<div class="panel active" id="panel-gps">
+  <div id="map"></div>
+
+  <div class="live-toast" id="liveToast">
+    <div class="status-dot"></div>
+    Live GPS Tracking &nbsp;&middot;&nbsp; Updated just now
+  </div>
+
+  <div class="map-controls">
+    <div class="map-btn" id="btnCenter" data-no-toggle title="Center on tracker">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <line x1="12" y1="2" x2="12" y2="6"/>
+        <line x1="12" y1="18" x2="12" y2="22"/>
+        <line x1="2" y1="12" x2="6" y2="12"/>
+        <line x1="18" y1="12" x2="22" y2="12"/>
+      </svg>
+    </div>
+    <div class="map-btn" id="btnDeviceInfo" data-no-toggle title="Device info">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="8" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="12" y1="12" x2="12" y2="16"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="gps-indicator">
+    <div class="dot"></div>
+    <span id="gpsCoords"></span>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="nav-current">
+      <div class="turn-icon">&#x1F4CD;</div>
+      <div class="turn-text">
+        <div class="turn-action" id="live-coord-label">Live coordinates</div>
+        <div class="turn-road" id="live-coord-value" style="font-size:.82rem">Waiting for GPS...</div>
+        <div class="turn-dist" id="live-last-update">-</div>
+      </div>
+    </div>
+    <button class="btn-reroute" onclick="rerouteAlert()">Clear Track</button>
+    <button class="btn-stop" onclick="stopNav()">Stop</button>
+  </div>
+
+  <div class="device-panel-float" id="devicePanelFloat" aria-hidden="true">
+    <div class="panel-header">
+      <span class="panel-title">Device</span>
+      <button type="button" class="panel-close" id="devicePanelClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="panel-body">
+      <div class="device-header">
+        <div class="device-name" id="floatDeviceName">RPI-01</div>
+        <div class="device-sub" id="floatDeviceSub">Raspberry Pi GPS Tracker</div>
+        <div class="device-status" id="floatDeviceStatus"><span class="dot"></span><span id="floatDeviceStatusText">Online</span></div>
+      </div>
+      <div class="section-title">Device Information</div>
+      <div class="info-row"><span class="label">Device Type</span><span class="value" id="floatDeviceType">Raspberry Pi 4</span></div>
+      <div class="info-row"><span class="label">Last Update</span><span class="value" id="floatLastUpdate">-</span></div>
+      <div class="info-row"><span class="label">Speed</span><span class="value" id="floatSpeed">-</span></div>
+      <div class="info-row"><span class="label">Coordinates</span><span class="value" id="floatCoords">-</span></div>
+      <div class="section-title connectivity-block">Connectivity Status</div>
+      <div class="info-row"><span class="label">Operator</span><span class="value" id="floatOperator">-</span></div>
+      <div class="info-row"><span class="label">Connection</span><span class="value" id="floatConnection">-</span></div>
+      <div class="info-row"><span class="label">Modem</span><span class="value" id="floatModem">-</span></div>
+    </div>
+  </div>
+</div>

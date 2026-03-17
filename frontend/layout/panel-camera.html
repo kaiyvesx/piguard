@@ -1,0 +1,85 @@
+<!-- Camera Panel -->
+<div class="panel" id="panel-camera">
+  <div class="camera-toolbar">
+    <h2>Camera Feeds</h2>
+    <div class="cam-toolbar-right">
+      <div class="cam-chip active">Live</div>
+      <div class="cam-chip">Playback</div>
+      <div class="cam-chip">Snapshot</div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:.68rem;color:var(--danger)">
+        <div class="status-dot" style="background:var(--danger)"></div>
+        REC
+      </div>
+    </div>
+  </div>
+
+  <div class="cam-grid">
+    <div class="cam-cell featured">
+      <div class="cam-feed">
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+          <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+        </svg>
+      </div>
+      <div class="cam-overlay"></div>
+      <div class="cam-corner"><div class="cam-dot rec"></div></div>
+      <div class="cam-label">
+        <span class="cam-name">CAM 1 &mdash; Front View</span>
+        <span class="cam-status offline">Disconnected</span>
+      </div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:.72rem;color:var(--muted);background:rgba(6,14,26,.8);padding:6px 12px;border-radius:6px;border:1px solid var(--card-border)">No Signal</span>
+      </div>
+    </div>
+
+    <div class="cam-cell">
+      <div class="cam-feed" style="background:radial-gradient(ellipse at 60% 30%, #0a2030 0%, #060e1a 70%)">
+        <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+          <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+        </svg>
+      </div>
+      <div class="cam-overlay"></div>
+      <div class="cam-corner"><div class="cam-dot rec"></div></div>
+      <div class="cam-label">
+        <span class="cam-name">CAM 2 &mdash; Rear View</span>
+        <span class="cam-status offline">Disconnected</span>
+      </div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:.72rem;color:var(--muted);background:rgba(6,14,26,.8);padding:6px 12px;border-radius:6px;border:1px solid var(--card-border)">No Signal</span>
+      </div>
+    </div>
+
+    <div class="cam-cell">
+      <div class="cam-feed" style="background:radial-gradient(ellipse at 70% 60%, #0a1830 0%, #060e1a 70%)">
+        <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+          <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+        </svg>
+      </div>
+      <div class="cam-overlay"></div>
+      <div class="cam-corner"><div class="cam-dot rec"></div></div>
+      <div class="cam-label">
+        <span class="cam-name">CAM 3 &mdash; Left Side</span>
+        <span class="cam-status offline">Disconnected</span>
+      </div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:.72rem;color:var(--muted);background:rgba(6,14,26,.8);padding:6px 12px;border-radius:6px;border:1px solid var(--card-border)">No Signal</span>
+      </div>
+    </div>
+
+    <div class="cam-cell">
+      <div class="cam-feed" style="background:#060e1a;filter:grayscale(1)">
+        <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="1" opacity=".4">
+          <line x1="1" y1="1" x2="23" y2="23"/>
+          <path d="M21 21H3a2 2 0 01-2-2V8a2 2 0 012-2h3m3-3h6l2 3h4a2 2 0 012 2v9.34"/>
+        </svg>
+      </div>
+      <div class="cam-overlay"></div>
+      <div class="cam-label">
+        <span class="cam-name">CAM 4 &mdash; Right Side</span>
+        <span class="cam-status offline">Disconnected</span>
+      </div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">
+        <span style="font-size:.72rem;color:var(--muted);background:rgba(6,14,26,.8);padding:6px 12px;border-radius:6px;border:1px solid var(--card-border)">No Signal</span>
+      </div>
+    </div>
+  </div>
+</div>

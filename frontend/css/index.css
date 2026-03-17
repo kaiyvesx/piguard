@@ -42,6 +42,14 @@
       transition: background .25s ease, color .25s ease;
     }
 
+    #appRoot {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+
     /* ─── TOP NAV ─── */
     header {
       display: flex;
@@ -96,10 +104,13 @@
     .header-center #searchBtn:hover { color: var(--primary); }
     .header-right { display: flex; align-items: center; gap: 12px; }
     .btn-icon {
+      -webkit-appearance: none;
+      appearance: none;
       background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 50%;
       width: 36px; height: 36px;
+      padding: 0;
       display: flex; align-items: center; justify-content: center;
       cursor: pointer;
       color: var(--muted);
@@ -121,6 +132,7 @@
     .main {
       display: flex;
       flex: 1;
+      min-height: 0;
       overflow: hidden;
     }
 
@@ -323,6 +335,8 @@
       flex: 1;
       display: none;
       position: relative;
+      min-width: 0;
+      min-height: 0;
       overflow: hidden;
     }
     .panel.active { display: flex; }
@@ -620,6 +634,13 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
+    }
+    .sms-list-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
     }
     .sms-list-header h2 {
       font-size: 0.9rem;
@@ -633,6 +654,22 @@
       font-weight: 700;
       padding: 2px 6px;
       border-radius: 10px;
+    }
+    .sms-extra-toolbar {
+      padding: 0 12px 10px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .sms-extra-hint {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 6px;
+      padding-left: 10px;
+    }
+    .sms-extra-hint.ok {
+      color: var(--success);
+    }
+    .sms-extra-hint.warn {
+      color: var(--warning);
     }
     .sms-search {
       margin: 10px 12px;
@@ -751,6 +788,19 @@
       border-bottom-left-radius: 4px;
     }
     .msg-time { font-size: 0.58rem; color: var(--muted); margin-top: 3px; }
+    .msg-resend-btn {
+      margin-top: 4px;
+      padding: 3px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--danger);
+      background: rgba(255, 82, 82, 0.12);
+      color: var(--danger);
+      font-size: 0.62rem;
+      font-weight: 700;
+      cursor: pointer;
+      align-self: flex-end;
+    }
+    .msg-resend-btn:hover { opacity: .85; }
     .date-divider {
       text-align: center;
       font-size: 0.62rem;
@@ -762,11 +812,28 @@
       background: var(--card-bg);
       border-top: 1px solid var(--card-border);
       display: flex;
+      flex-direction: row;
+      gap: 10px;
+      align-items: center;
+      justify-content: center;
+    }
+    .compose-extra-row {
+      width: 100%;
+    }
+    .compose-main-row {
+      display: flex;
       gap: 10px;
       align-items: center;
     }
+    .compose-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
     .compose-input {
-      flex: 1;
+      flex: 0 1 520px;
+      width: min(100%, 520px);
       background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 20px;
@@ -778,6 +845,36 @@
     }
     .compose-input:focus { border-color: var(--primary); }
     .compose-input::placeholder { color: var(--muted); }
+    .compose-extra-input {
+      width: 100%;
+    }
+    .btn-add-number {
+      height: 38px;
+      background: var(--surface-1);
+      border: 1px solid var(--card-border);
+      border-radius: 19px;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .btn-add-number:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .btn-add-number.active {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: rgba(0,200,255,.08);
+    }
+    .btn-add-number.added {
+      border-color: var(--success);
+      color: var(--success);
+      background: rgba(0,230,118,.08);
+    }
     .btn-send {
       width: 38px; height: 38px;
       background: var(--primary);
@@ -789,6 +886,11 @@
       transition: opacity .2s;
     }
     .btn-send:hover { opacity: .85; }
+    .btn-send:disabled,
+    .btn-add-number:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
 
     /* ── CAMERA PANEL ── */
     #panel-camera {
@@ -993,5 +1095,12 @@
     @media (max-width: 700px) {
       .sidebar { display: none; }
       .header-center { display: none; }
+      .compose-area {
+        justify-content: stretch;
+      }
+      .compose-area .compose-input {
+        flex: 1 1 auto;
+        width: 100%;
+      }
     }
   
