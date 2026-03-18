@@ -5,6 +5,9 @@
   }
 
   const connStatusEl = document.getElementById('piConnStatus');
+  const gpsStatusEl = document.getElementById('gpsConnStatus');
+  const piStatusDotEl = document.getElementById('piStatusDot');
+  const gpsStatusDotEl = document.getElementById('gpsStatusDot');
   const contactsWrap = document.getElementById('smsContactsList');
   const messagesWrap = document.getElementById('smsMessagesArea');
   const composeInput = document.getElementById('smsComposeInput');
@@ -53,6 +56,17 @@
     if (!connStatusEl) return;
     connStatusEl.style.color = connected ? 'var(--success)' : 'var(--danger)';
     connStatusEl.textContent = message;
+    if (piStatusDotEl) piStatusDotEl.style.background = connected ? 'var(--success)' : 'var(--danger)';
+  }
+
+  function setGpsState(connected, message) {
+    if (gpsStatusEl) {
+      gpsStatusEl.style.color = connected ? 'var(--success)' : 'var(--danger)';
+      gpsStatusEl.textContent = message;
+    }
+    if (gpsStatusDotEl) gpsStatusDotEl.style.background = connected ? 'var(--success)' : 'var(--danger)';
+    const floatGpsEl = document.getElementById('floatGpsStatus');
+    if (floatGpsEl) floatGpsEl.textContent = connected ? 'On' : 'Disconnected';
   }
 
   function toNum(v) {
@@ -997,6 +1011,8 @@
     const ptsEl   = document.getElementById('stat-pts');
 
     const hasFix  = gps && gps.fix === '1';
+    const gpsConnected = Boolean(hasFix && gps.lat != null && gps.lon != null);
+    setGpsState(gpsConnected, gpsConnected ? 'GPS: On' : 'GPS: Disconnected');
     const satCount = gps && gps.sat != null ? gps.sat : (points.length > 0 ? points[points.length-1].sat : '—');
 
     if (locEl) {
@@ -1119,7 +1135,7 @@
         lastBase = base;
         syncCameraMedia();
       }
-      setConnectionState(true, `Connected: ${base}`);
+      setConnectionState(true, `RasPi: Connected (${base})`);
 
       const [gps, track, contactData, messagesData, statusData] = await Promise.all([
         api.getGpsLatest(),
@@ -1141,7 +1157,8 @@
       updateSmsStats(lastMessagesData);
     } catch (err) {
       const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
-      setConnectionState(false, `Offline: ${reason}`);
+      setConnectionState(false, `RasPi: Offline (${reason})`);
+      setGpsState(false, 'GPS: Disconnected');
       lastStatusData = null;
       setCameraConnectionState(`Camera offline: ${reason}`);
       stopCameraMedia();

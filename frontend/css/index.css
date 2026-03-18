@@ -103,6 +103,17 @@
     }
     .header-center #searchBtn:hover { color: var(--primary); }
     .header-right { display: flex; align-items: center; gap: 12px; }
+    .header-status-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 12px;
+    }
     .btn-icon {
       -webkit-appearance: none;
       appearance: none;
