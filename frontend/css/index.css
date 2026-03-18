@@ -812,6 +812,19 @@
       align-self: flex-end;
     }
     .msg-resend-btn:hover { opacity: .85; }
+    .msg-forward-btn {
+      margin-top: 4px;
+      padding: 3px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--primary);
+      background: rgba(0, 200, 255, 0.1);
+      color: var(--primary);
+      font-size: 0.62rem;
+      font-weight: 700;
+      cursor: pointer;
+      align-self: flex-end;
+    }
+    .msg-forward-btn:hover { opacity: .85; }
     .date-divider {
       text-align: center;
       font-size: 0.62rem;
@@ -901,6 +914,141 @@
     .btn-add-number:disabled {
       opacity: .6;
       cursor: not-allowed;
+    }
+    .sms-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 8, 15, 0.72);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+      padding: 16px;
+    }
+    .sms-modal.open {
+      display: flex;
+    }
+    .sms-modal-card {
+      width: min(560px, 100%);
+      max-height: 88vh;
+      overflow: auto;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sms-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .sms-modal-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .sms-modal-sub {
+      margin-top: 4px;
+      font-size: 0.68rem;
+      color: var(--muted);
+    }
+    .sms-modal-close {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: var(--surface-1);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .sms-modal-close:hover {
+      color: var(--text);
+      border-color: var(--primary);
+    }
+    .sms-modal-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sms-modal-field label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .sms-modal-textarea,
+    .sms-modal-input {
+      width: 100%;
+      border: 1px solid var(--card-border);
+      background: var(--surface-1);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      outline: none;
+      resize: vertical;
+      min-height: 40px;
+    }
+    .sms-modal-textarea:focus,
+    .sms-modal-input:focus {
+      border-color: var(--primary);
+    }
+    .sms-modal-recipient-list {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid var(--card-border);
+      background: var(--surface-1);
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sms-modal-recipient {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .sms-modal-recipient:hover {
+      border-color: var(--card-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .sms-modal-recipient input {
+      accent-color: var(--primary);
+      margin: 0;
+    }
+    .sms-modal-recipient-name {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .sms-modal-recipient-num {
+      font-size: 0.66rem;
+      color: var(--muted);
+    }
+    .sms-modal-empty {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 14px 6px;
+    }
+    .sms-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
     /* ── CAMERA PANEL ── */
@@ -1158,6 +1306,10 @@
     @media (max-width: 700px) {
       .sidebar { display: none; }
       .header-center { display: none; }
+      .sms-modal-card {
+        width: 100%;
+        max-height: 92vh;
+      }
       .compose-area {
         justify-content: stretch;
       }

@@ -11,11 +11,16 @@
   const contactsWrap = document.getElementById('smsContactsList');
   const messagesWrap = document.getElementById('smsMessagesArea');
   const composeInput = document.getElementById('smsComposeInput');
-  const addNumberBtn = document.getElementById('smsAddNumberBtn');
-  const extraNumberRow = document.getElementById('smsExtraRow');
-  const extraNumberInput = document.getElementById('smsExtraNumberInput');
-  const extraNumberHint = document.getElementById('smsExtraHint');
   const sendBtn = document.getElementById('smsSendBtn');
+  const smsForwardModal = document.getElementById('smsForwardModal');
+  const smsModalTitle = document.getElementById('smsModalTitle');
+  const smsModalSubtitle = document.getElementById('smsModalSubtitle');
+  const smsModalMessage = document.getElementById('smsModalMessage');
+  const smsModalRecipientList = document.getElementById('smsModalRecipientList');
+  const smsModalExtraNumber = document.getElementById('smsModalExtraNumber');
+  const smsModalSendBtn = document.getElementById('smsModalSend');
+  const smsModalCancelBtn = document.getElementById('smsModalCancel');
+  const smsModalCloseBtn = document.getElementById('smsModalClose');
   const smsBadgeEl = document.getElementById('smsBadge');
   const smsThreadAvatarEl = document.getElementById('smsThreadAvatar');
   const smsThreadNameEl = document.getElementById('smsThreadName');
@@ -51,6 +56,26 @@
   let cameraRefreshInFlight = false;
   const cameraSnapshotIntervals = new Map();
   const cameraSnapshotRequests = new Map();
+
+  function getAddNumberBtn() {
+    return document.getElementById('smsAddNumberBtn');
+  }
+
+  function getNewMessageBtn() {
+    return document.getElementById('smsNewMessageBtn');
+  }
+
+  function getExtraNumberRow() {
+    return document.getElementById('smsExtraRow');
+  }
+
+  function getExtraNumberInput() {
+    return document.getElementById('smsExtraNumberInput');
+  }
+
+  function getExtraNumberHint() {
+    return document.getElementById('smsExtraHint');
+  }
 
   function setConnectionState(connected, message) {
     if (!connStatusEl) return;
@@ -275,6 +300,7 @@
         <div class="msg ${ok}">
           <div class="msg-bubble">${msg}</div>
           <div class="msg-time">${metaParts.join(' · ')}</div>
+          <button class="msg-forward-btn" type="button">Forward</button>
           ${item.localStatus === 'failed' ? `<button class="msg-resend-btn" type="button" data-msg-id="${itemId}">Resend</button>` : ''}
         </div>
       `;
@@ -525,6 +551,10 @@
   }
 
   function updateExtraNumberUi() {
+    const addNumberBtn = getAddNumberBtn();
+    const extraNumberRow = getExtraNumberRow();
+    const extraNumberInput = getExtraNumberInput();
+    const extraNumberHint = getExtraNumberHint();
     if (!addNumberBtn) return;
     const clean = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
     const isValid = clean.length === 11;
@@ -586,6 +616,9 @@
   }
 
   function openChatForExtraNumber() {
+    const extraNumberRow = getExtraNumberRow();
+    const extraNumberInput = getExtraNumberInput();
+    const extraNumberHint = getExtraNumberHint();
     const clean = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
     if (clean.length !== 11) {
       if (extraNumberHint) {
@@ -602,6 +635,7 @@
     if (selected) setSelectedNumber(selected);
 
     if (extraNumberRow) extraNumberRow.setAttribute('hidden', '');
+    const addNumberBtn = getAddNumberBtn();
     if (addNumberBtn) {
       addNumberBtn.classList.remove('active');
       addNumberBtn.classList.remove('added');
@@ -615,11 +649,172 @@
   }
 
   function getRecipientsForSend() {
+    const extraNumberInput = getExtraNumberInput();
     const recipients = [];
     if (selectedNumber) recipients.push(String(selectedNumber).trim());
     const extra = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
     if (extra) recipients.push(extra);
     return Array.from(new Set(recipients.filter(Boolean)));
+  }
+
+  function getRecipientPool() {
+    const unique = new Map();
+    contacts.forEach((entry) => {
+      const number = String((entry && entry.number) || '').trim();
+      if (!number) return;
+      if (!unique.has(number)) {
+        unique.set(number, {
+          number,
+          name: getDisplayName(number, entry && entry.name ? entry.name : number),
+        });
+      }
+    });
+    return Array.from(unique.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  }
+
+  function renderModalRecipients() {
+    if (!smsModalRecipientList) return;
+    const items = getRecipientPool();
+    if (!items.length) {
+      smsModalRecipientList.innerHTML = '<div class="sms-modal-empty">No contacts yet. Add a number first.</div>';
+      return;
+    }
+
+    smsModalRecipientList.innerHTML = items.map((entry) => {
+      const number = escapeHtml(entry.number);
+      const name = escapeHtml(entry.name || entry.number);
+      return `
+        <label class="sms-modal-recipient">
+          <input type="checkbox" class="sms-modal-recipient-check" value="${number}">
+          <div>
+            <div class="sms-modal-recipient-name">${name}</div>
+            <div class="sms-modal-recipient-num">${number}</div>
+          </div>
+        </label>
+      `;
+    }).join('');
+  }
+
+  function setModalSelection(numbers) {
+    const chosen = new Set((numbers || []).map((num) => String(num || '').trim()).filter(Boolean));
+    if (!smsModalRecipientList) return;
+    smsModalRecipientList.querySelectorAll('.sms-modal-recipient-check').forEach((input) => {
+      input.checked = chosen.has(String(input.value || '').trim());
+    });
+  }
+
+  function collectModalRecipients() {
+    const recipients = [];
+    if (smsModalRecipientList) {
+      smsModalRecipientList.querySelectorAll('.sms-modal-recipient-check:checked').forEach((input) => {
+        recipients.push(String(input.value || '').trim());
+      });
+    }
+
+    const extra = normalizeExtraNumber(smsModalExtraNumber ? smsModalExtraNumber.value : '');
+    if (smsModalExtraNumber && smsModalExtraNumber.value !== extra) {
+      smsModalExtraNumber.value = extra;
+    }
+    if (extra) recipients.push(extra);
+
+    return Array.from(new Set(recipients.filter(Boolean)));
+  }
+
+  function openSmsModal(opts = {}) {
+    if (!smsForwardModal) return;
+    const title = opts.title || 'New message';
+    const subtitle = opts.subtitle || 'Choose one or more recipients.';
+    const message = opts.message || '';
+    const preselect = Array.isArray(opts.preselect) ? opts.preselect : [];
+
+    renderModalRecipients();
+
+    if (smsModalTitle) smsModalTitle.textContent = title;
+    if (smsModalSubtitle) smsModalSubtitle.textContent = subtitle;
+    if (smsModalMessage) smsModalMessage.value = message;
+    if (smsModalExtraNumber) smsModalExtraNumber.value = '';
+
+    setModalSelection(preselect);
+
+    smsForwardModal.classList.add('open');
+    smsForwardModal.setAttribute('aria-hidden', 'false');
+    if (smsModalMessage) smsModalMessage.focus();
+  }
+
+  function closeSmsModal() {
+    if (!smsForwardModal) return;
+    smsForwardModal.classList.remove('open');
+    smsForwardModal.setAttribute('aria-hidden', 'true');
+    if (smsModalMessage) smsModalMessage.value = '';
+    if (smsModalExtraNumber) smsModalExtraNumber.value = '';
+  }
+
+  async function sendMessageToRecipients(recipients, message, options = {}) {
+    const cleanMessage = String(message || '').trim();
+    const cleanRecipients = Array.from(new Set((recipients || []).map((num) => String(num || '').trim()).filter(Boolean)));
+    if (!cleanMessage) {
+      alert('Type a message first.');
+      return false;
+    }
+    if (!cleanRecipients.length) {
+      alert('Select at least one recipient.');
+      return false;
+    }
+
+    if (options.pendingInputEl) {
+      const maybeNum = normalizeExtraNumber(options.pendingInputEl.value);
+      if (maybeNum && maybeNum.length !== 11) {
+        alert('Additional number must be exactly 11 digits.');
+        options.pendingInputEl.focus();
+        return false;
+      }
+    }
+
+    const disableEls = Array.isArray(options.disableEls) ? options.disableEls.filter(Boolean) : [];
+
+    try {
+      disableEls.forEach((el) => { el.disabled = true; });
+
+      cleanRecipients.forEach((num) => { upsertManualContact(num); });
+      contacts = combineContacts(contacts);
+      renderContacts();
+
+      const localIds = addLocalOutgoingMessages(cleanRecipients, cleanMessage);
+      renderMessages(lastMessagesData);
+
+      await api.sendSms(cleanRecipients, cleanMessage);
+      updateLocalOutgoingStatus(localIds, 'sent');
+      renderMessages(lastMessagesData);
+      await refreshFromPi();
+      return true;
+    } catch (err) {
+      const localIds = [];
+      localOutgoingSms = localOutgoingSms.map((item) => {
+        if (item.localStatus !== 'sending' || item.message !== cleanMessage) return item;
+        if (cleanRecipients.includes(String(item.number || '').trim())) {
+          localIds.push(item.id);
+          return { ...item, localStatus: 'failed' };
+        }
+        return item;
+      });
+      if (localIds.length) renderMessages(lastMessagesData);
+
+      const reason = err && err.message ? err.message : 'Send failed';
+      alert(`Failed to send SMS: ${reason}`);
+      return false;
+    } finally {
+      disableEls.forEach((el) => { el.disabled = false; });
+    }
+  }
+
+  async function onModalSend() {
+    const message = smsModalMessage ? smsModalMessage.value.trim() : '';
+    const recipients = collectModalRecipients();
+    const ok = await sendMessageToRecipients(recipients, message, {
+      pendingInputEl: smsModalExtraNumber,
+      disableEls: [smsModalSendBtn, smsModalCancelBtn, smsModalCloseBtn],
+    });
+    if (ok) closeSmsModal();
   }
 
   function setCameraMode(nextMode) {
@@ -1166,61 +1361,31 @@
   }
 
   async function onSend() {
+    const extraNumberInput = getExtraNumberInput();
     const message = composeInput ? composeInput.value.trim() : '';
     if (!message) {
       return;
     }
-
-    const extraRaw = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
-    if (extraRaw && extraRaw.length !== 11) {
-      alert('Additional number must be exactly 11 digits.');
-      if (extraNumberInput) extraNumberInput.focus();
-      return;
-    }
-
     const recipients = getRecipientsForSend();
     if (!recipients.length) {
       alert('Select a contact or enter an additional number first.');
       return;
     }
 
-    try {
-      sendBtn.disabled = true;
-      if (addNumberBtn) addNumberBtn.disabled = true;
+    const ok = await sendMessageToRecipients(recipients, message, {
+      pendingInputEl: extraNumberInput,
+      disableEls: [sendBtn, getAddNumberBtn(), getNewMessageBtn()],
+    });
+    if (!ok) return;
 
-      const localIds = addLocalOutgoingMessages(recipients, message);
-      renderMessages(lastMessagesData);
-      if (composeInput) {
-        composeInput.value = '';
-      }
-
-      await api.sendSms(recipients, message);
-      updateLocalOutgoingStatus(localIds, 'sent');
-      renderMessages(lastMessagesData);
-
-      await refreshFromPi();
-    } catch (err) {
-      const localIds = [];
-      // Keep failed messages visible in thread so the user gets feedback.
-      localOutgoingSms = localOutgoingSms.map((item) => {
-        if (item.localStatus !== 'sending' || item.message !== message) return item;
-        if (recipients.includes(String(item.number || '').trim())) {
-          localIds.push(item.id);
-          return { ...item, localStatus: 'failed' };
-        }
-        return item;
-      });
-      if (localIds.length) renderMessages(lastMessagesData);
-
-      const reason = err && err.message ? err.message : 'Send failed';
-      alert(`Failed to send SMS: ${reason}`);
-    } finally {
-      sendBtn.disabled = false;
-      if (addNumberBtn) addNumberBtn.disabled = false;
-    }
+    if (composeInput) composeInput.value = '';
   }
 
   function toggleExtraNumberInput() {
+    const addNumberBtn = getAddNumberBtn();
+    const extraNumberRow = getExtraNumberRow();
+    const extraNumberInput = getExtraNumberInput();
+    const extraNumberHint = getExtraNumberHint();
     if (!extraNumberRow || !addNumberBtn) return;
     const hidden = extraNumberRow.hasAttribute('hidden');
     if (hidden) {
@@ -1260,8 +1425,38 @@
     });
   }
 
-  if (addNumberBtn) {
-    addNumberBtn.addEventListener('click', toggleExtraNumberInput);
+  if (smsModalSendBtn) {
+    smsModalSendBtn.addEventListener('click', onModalSend);
+  }
+
+  if (smsModalCancelBtn) {
+    smsModalCancelBtn.addEventListener('click', closeSmsModal);
+  }
+
+  if (smsModalCloseBtn) {
+    smsModalCloseBtn.addEventListener('click', closeSmsModal);
+  }
+
+  if (smsForwardModal) {
+    smsForwardModal.addEventListener('click', (evt) => {
+      if (evt.target === smsForwardModal) closeSmsModal();
+    });
+  }
+
+  if (smsModalMessage) {
+    smsModalMessage.addEventListener('keydown', (evt) => {
+      if ((evt.ctrlKey || evt.metaKey) && evt.key === 'Enter') {
+        evt.preventDefault();
+        onModalSend();
+      }
+    });
+  }
+
+  if (smsModalExtraNumber) {
+    smsModalExtraNumber.addEventListener('input', () => {
+      const clean = normalizeExtraNumber(smsModalExtraNumber.value);
+      if (smsModalExtraNumber.value !== clean) smsModalExtraNumber.value = clean;
+    });
   }
 
   if (cameraModeLiveBtn) {
@@ -1278,20 +1473,38 @@
     });
   }
 
-  if (extraNumberInput) {
-    extraNumberInput.addEventListener('input', updateExtraNumberUi);
-    extraNumberInput.addEventListener('keydown', (evt) => {
-      if (evt.key === 'Enter') {
-        evt.preventDefault();
-        openChatForExtraNumber();
-      }
-    });
-  }
+  document.addEventListener('input', (evt) => {
+    const target = evt.target;
+    if (!target || target.id !== 'smsExtraNumberInput') return;
+    updateExtraNumberUi();
+  });
+
+  document.addEventListener('keydown', (evt) => {
+    const target = evt.target;
+    if (!target || target.id !== 'smsExtraNumberInput') return;
+    if (evt.key === 'Enter') {
+      evt.preventDefault();
+      openChatForExtraNumber();
+    }
+  });
 
   if (messagesWrap) {
     messagesWrap.addEventListener('click', (evt) => {
       const target = evt.target;
       if (!target || !target.closest) return;
+      const forwardBtn = target.closest('.msg-forward-btn');
+      if (forwardBtn) {
+        evt.preventDefault();
+        const msgRow = forwardBtn.closest('.msg');
+        const bubble = msgRow ? msgRow.querySelector('.msg-bubble') : null;
+        const message = bubble ? String(bubble.textContent || '').trim() : '';
+        openSmsModal({
+          title: 'Forward message',
+          subtitle: 'Choose recipients for this forwarded SMS.',
+          message,
+        });
+        return;
+      }
       const resendBtn = target.closest('.msg-resend-btn');
       if (!resendBtn) return;
       evt.preventDefault();
@@ -1299,9 +1512,35 @@
     });
   }
 
+  document.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Escape' && smsForwardModal && smsForwardModal.classList.contains('open')) {
+      closeSmsModal();
+    }
+  });
+
   document.addEventListener('click', (evt) => {
     const target = evt.target;
     if (!target || !target.closest) return;
+
+    const addNumberControl = target.closest('#smsAddNumberBtn');
+    if (addNumberControl) {
+      evt.preventDefault();
+      toggleExtraNumberInput();
+      return;
+    }
+
+    const newMessageControl = target.closest('#smsNewMessageBtn');
+    if (newMessageControl) {
+      evt.preventDefault();
+      openSmsModal({
+        title: 'New message',
+        subtitle: 'Select recipients and send.',
+        message: composeInput ? composeInput.value.trim() : '',
+        preselect: selectedNumber ? [selectedNumber] : [],
+      });
+      return;
+    }
+
     const renameControl = target.closest('#smsRenameBtn');
     if (!renameControl) return;
     evt.preventDefault();
