@@ -18,6 +18,9 @@ function switchPanel(name) {
   if (name === 'gps') {
     setTimeout(() => { if (typeof map !== 'undefined') map.invalidateSize(); }, 50);
   }
+  if (typeof window.onDashboardPanelChange === 'function') {
+    window.onDashboardPanelChange(name);
+  }
 }
 
 // ══════════════════════════════════════════

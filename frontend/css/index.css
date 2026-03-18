@@ -909,6 +909,7 @@
     .camera-toolbar h2 { font-size: 0.9rem; font-weight: 700; color: var(--text); }
     .cam-toolbar-right { display: flex; gap: 8px; align-items: center; }
     .cam-chip {
+      appearance: none;
       background: var(--surface-1);
       border: 1px solid var(--card-border);
       border-radius: 6px;
@@ -920,6 +921,12 @@
     }
     .cam-chip:hover { border-color: var(--primary); color: var(--primary); }
     .cam-chip.active { background: var(--primary); color: var(--secondary); border-color: var(--primary); }
+    .camera-connection {
+      font-size: 0.68rem;
+      color: var(--muted);
+      min-width: 170px;
+      text-align: right;
+    }
     .cam-grid {
       flex: 1;
       display: grid;
@@ -957,6 +964,12 @@
       justify-content: center;
     }
     .cam-feed svg { opacity: .12; }
+    .cam-feed img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
     .cam-overlay {
       position: absolute;
       inset: 0;
@@ -991,7 +1004,46 @@
       border-radius: 50%;
       background: var(--danger);
     }
+    .cam-dot.online { background: var(--success); }
     .cam-dot.rec { background: var(--danger); animation: pulse 2s infinite; }
+    .cam-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: var(--muted);
+      text-align: center;
+      padding: 16px;
+      font-size: 0.76rem;
+    }
+    .cam-placeholder svg { opacity: .18; }
+    .cam-empty-note {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .cam-empty-note span {
+      font-size: .72rem;
+      color: var(--muted);
+      background: rgba(6,14,26,.82);
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+    }
+    .cam-cell.is-offline .cam-feed img {
+      filter: grayscale(1) brightness(.55);
+    }
+    .cam-cell.is-offline .cam-corner .cam-dot {
+      background: var(--danger);
+    }
+    .cam-cell.is-live .cam-corner .cam-dot {
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
     .cam-cell::after {
       content: '';
       position: absolute;

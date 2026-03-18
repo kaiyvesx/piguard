@@ -42,6 +42,28 @@ async function fetchJson(url, options = {}, timeoutMs = 8000) {
   }
 }
 
+async function fetchBinaryDataUrl(url, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return `data:${contentType};base64,${buffer.toString('base64')}`;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function detectBase() {
   if (cachedBase) {
     try {
@@ -81,6 +103,11 @@ contextBridge.exposeInMainWorld('piBridge', {
   getStatus: () => request('/status', 'GET', undefined, 8000),
   getGpsLatest: () => request('/gps_latest', 'GET', undefined, 8000),
   getGpsTrack:  () => request('/gps_track',  'GET', undefined, 12000),
+  getCameras:   () => request('/cameras',    'GET', undefined, 12000),
+  getCameraSnapshot: async (cameraIndex) => {
+    const base = await detectBase();
+    return fetchBinaryDataUrl(`${base}/camera/${cameraIndex}/snapshot.jpg?t=${Date.now()}`, 15000);
+  },
   getContacts:  () => request('/contacts',   'GET', undefined, 8000),
   getMessages:  () => request('/messages',   'GET', undefined, 8000),
   sendSms: (numbers, message) => request('/send_sms', 'POST', { to: numbers, message }, 20000),

@@ -1,29 +1,18 @@
 <div id="sidebarCamera" style="display:none">
   <div class="section-label">Camera Status</div>
-  <div style="padding:0 12px 8px;display:flex;flex-direction:column;gap:8px">
+  <div id="cameraSidebarList" style="padding:0 12px 8px;display:flex;flex-direction:column;gap:8px">
     <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 1 — Front</div>
-      <span class="cam-status offline">Disconnected</span>
-    </div>
-    <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 2 — Rear</div>
-      <span class="cam-status offline">Disconnected</span>
-    </div>
-    <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 3 — Left</div>
-      <span class="cam-status offline">Disconnected</span>
-    </div>
-    <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:.78rem;font-weight:600;color:var(--text)">CAM 4 — Right</div>
-      <span class="cam-status offline">Disconnected</span>
+      <div style="font-size:.78rem;font-weight:600;color:var(--text)">Waiting for camera backend</div>
+      <span class="cam-status offline">Offline</span>
     </div>
   </div>
   <div class="section-label">Recording</div>
   <div style="padding:0 12px 12px">
     <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:12px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:.7rem;color:var(--muted)">Storage Used</span><span style="font-size:.75rem;font-weight:600;color:var(--text)">14.2 GB</span></div>
-      <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden;margin-bottom:8px"><div style="width:57%;height:100%;background:var(--primary)"></div></div>
-      <div style="display:flex;justify-content:space-between"><span style="font-size:.7rem;color:var(--muted)">Resolution</span><span style="font-size:.75rem;font-weight:600;color:var(--text)">1080p</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:.7rem;color:var(--muted)">Detected Cameras</span><span id="cameraDetectedCount" style="font-size:.75rem;font-weight:600;color:var(--text)">0</span></div>
+      <div style="background:var(--card-border);border-radius:4px;height:4px;overflow:hidden;margin-bottom:8px"><div id="cameraDetectedBar" style="width:0%;height:100%;background:var(--primary)"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:.7rem;color:var(--muted)">Mode</span><span id="cameraModeLabel" style="font-size:.75rem;font-weight:600;color:var(--text)">Live</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="font-size:.7rem;color:var(--muted)">Stream Status</span><span id="cameraStreamStatus" style="font-size:.75rem;font-weight:600;color:var(--text)">Idle</span></div>
     </div>
   </div>
 </div>

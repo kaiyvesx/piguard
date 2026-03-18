@@ -17,6 +17,16 @@
   const smsThreadAvatarEl = document.getElementById('smsThreadAvatar');
   const smsThreadNameEl = document.getElementById('smsThreadName');
   const smsThreadSubEl = document.getElementById('smsThreadSub');
+  const cameraGrid = document.getElementById('cameraGrid');
+  const cameraRefreshBtn = document.getElementById('cameraRefreshBtn');
+  const cameraModeLiveBtn = document.getElementById('cameraModeLiveBtn');
+  const cameraModeSnapshotBtn = document.getElementById('cameraModeSnapshotBtn');
+  const cameraConnectionLabel = document.getElementById('cameraConnectionLabel');
+  const cameraSidebarList = document.getElementById('cameraSidebarList');
+  const cameraDetectedCountEl = document.getElementById('cameraDetectedCount');
+  const cameraDetectedBarEl = document.getElementById('cameraDetectedBar');
+  const cameraModeLabelEl = document.getElementById('cameraModeLabel');
+  const cameraStreamStatusEl = document.getElementById('cameraStreamStatus');
 
   let selectedNumber = null;
   let lastBase = null;
@@ -32,6 +42,12 @@
   let trackPolyline = null;
   let piCarMarker = null;
   let lastPanelData = null; // { gps, track, lat, lon, speed, satCount, locEl } for re-fill when panel opens
+  let lastCameraData = { count: 0, cameras: [] };
+  let cameraMode = 'live';
+  let cameraPanelActive = false;
+  let cameraRefreshInFlight = false;
+  const cameraSnapshotIntervals = new Map();
+  const cameraSnapshotRequests = new Map();
 
   function setConnectionState(connected, message) {
     if (!connStatusEl) return;
@@ -133,7 +149,7 @@
     if (!contactsWrap || !Array.isArray(contacts)) return;
 
     if (!contacts.length) {
-      contactsWrap.innerHTML = '<div style="padding:12px 14px;color:var(--muted);font-size:.72rem">No contacts from backend yet.</div>';
+      contactsWrap.innerHTML = '<div style="padding:12px 14px;color:var(--muted);font-size:.72rem">No contacts or message threads yet.</div>';
       return;
     }
 
@@ -141,13 +157,14 @@
     contactsWrap.innerHTML = contacts.map((c) => {
       const name = escapeHtml(getDisplayName(c.number, c.name || 'Unnamed'));
       const number = escapeHtml(c.number || '');
+      const preview = escapeHtml(getLatestMessagePreview(c.number));
       const initials = escapeHtml(pickInitials(getDisplayName(c.number, c.name)));
       return `
         <div class="contact-item${number === activeNumber ? ' active' : ''}" data-number="${number}">
           <div class="contact-avatar">${initials}</div>
           <div class="contact-info">
             <div class="contact-name">${name}</div>
-            <div class="contact-preview">${number}</div>
+            <div class="contact-preview">${preview}</div>
           </div>
           <div class="contact-meta">
             <div class="contact-time">Pi</div>
@@ -168,10 +185,50 @@
     setSelectedNumber(activeNumber);
   }
 
+  function getBackendSentMessages(messagesData) {
+    const sent = messagesData && Array.isArray(messagesData.sms) ? messagesData.sms : [];
+    return sent.map((item) => ({
+      ...item,
+      number: String(item.number || '').trim(),
+      direction: item.ok ? 'out' : 'in',
+    }));
+  }
+
+  function getBackendInboxMessages(messagesData) {
+    const inbox = messagesData && Array.isArray(messagesData.sms_inbox) ? messagesData.sms_inbox : [];
+    return inbox.map((item, idx) => ({
+      id: item.id || `inbox-${idx}-${item.ts || ''}-${item.from_number || ''}`,
+      number: String(item.from_number || '').trim(),
+      message: item.message || '',
+      ts: item.ts,
+      ok: false,
+      direction: 'in',
+    }));
+  }
+
+  function getAllBackendThreadMessages(messagesData) {
+    return [...getBackendSentMessages(messagesData), ...getBackendInboxMessages(messagesData)].filter((item) => item.number);
+  }
+
+  function getLatestMessagePreview(number) {
+    const key = String(number || '').trim();
+    if (!key) return '';
+
+    const allSms = [...getAllBackendThreadMessages(lastMessagesData), ...localOutgoingSms]
+      .filter((item) => String(item.number || '').trim() === key)
+      .sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
+
+    if (!allSms.length) return key;
+
+    const latestText = String(allSms[0].message || '').replace(/\s+/g, ' ').trim();
+    if (!latestText) return key;
+    return latestText.length > 42 ? `${latestText.slice(0, 42)}...` : latestText;
+  }
+
   function renderMessages(messagesData) {
     if (!messagesWrap) return;
 
-    const backendSms = messagesData && Array.isArray(messagesData.sms) ? messagesData.sms : [];
+    const backendSms = getAllBackendThreadMessages(messagesData);
     const allSms = [...backendSms, ...localOutgoingSms].sort((a, b) => {
       const ta = new Date(a.ts || 0).getTime();
       const tb = new Date(b.ts || 0).getTime();
@@ -196,7 +253,7 @@
       const msgStatus = item.localStatus
         ? (item.localStatus === 'sending' ? 'Sending...' : (item.localStatus === 'sent' ? 'Sent' : 'Failed'))
         : '';
-      const ok = item.localStatus ? 'out' : (item.ok ? 'out' : 'in');
+      const ok = item.localStatus ? 'out' : (item.direction === 'in' ? 'in' : 'out');
       const metaParts = [number];
       if (time) metaParts.push(time);
       if (msgStatus) metaParts.push(msgStatus);
@@ -217,8 +274,8 @@
     const unreadEl = document.getElementById('sms-stat-unread');
     const totalEl = document.getElementById('sms-stat-total');
     const onlineEl = document.getElementById('sms-stat-online');
-    const allSms = messagesData && Array.isArray(messagesData.sms) ? messagesData.sms : [];
-    const incoming = allSms.filter((m) => !m.ok).length;
+    const allSms = getAllBackendThreadMessages(messagesData);
+    const incoming = allSms.filter((m) => m.direction === 'in').length;
 
     if (unreadEl) unreadEl.textContent = String(incoming);
     if (totalEl) totalEl.textContent = String(allSms.length);
@@ -507,6 +564,9 @@
     };
 
     (backendContacts || []).forEach(add);
+    getAllBackendThreadMessages(lastMessagesData).forEach((item) => {
+      add({ name: item.number, number: item.number });
+    });
     manualContacts.forEach(add);
     return merged;
   }
@@ -546,6 +606,287 @@
     const extra = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
     if (extra) recipients.push(extra);
     return Array.from(new Set(recipients.filter(Boolean)));
+  }
+
+  function setCameraMode(nextMode) {
+    cameraMode = nextMode === 'snapshot' ? 'snapshot' : 'live';
+    if (cameraModeLiveBtn) cameraModeLiveBtn.classList.toggle('active', cameraMode === 'live');
+    if (cameraModeSnapshotBtn) cameraModeSnapshotBtn.classList.toggle('active', cameraMode === 'snapshot');
+    if (cameraModeLabelEl) cameraModeLabelEl.textContent = cameraMode === 'live' ? 'Live' : 'Snapshot';
+    syncCameraMedia();
+    updateCameraSidebar();
+  }
+
+  function setCameraConnectionState(message) {
+    if (cameraConnectionLabel) cameraConnectionLabel.textContent = message;
+  }
+
+  function cameraTitle(camera, slotIndex) {
+    if (!camera) return `Camera Slot ${slotIndex + 1}`;
+    const idx = Number(camera.index);
+    return Number.isFinite(idx) ? `Camera ${idx}` : `Camera ${slotIndex + 1}`;
+  }
+
+  function cameraMeta(camera) {
+    if (!camera) return 'Waiting for signal';
+    const parts = [];
+    if (camera.device) parts.push(String(camera.device));
+    if (camera.width && camera.height) parts.push(`${camera.width}x${camera.height}`);
+    if (camera.fps) parts.push(`${Math.round(Number(camera.fps))} fps`);
+    return parts.join(' · ') || 'Detected camera';
+  }
+
+  function buildCameraMediaUrl(cameraIndex) {
+    if (!lastBase) return '';
+    return `${lastBase}/camera/${cameraIndex}/snapshot.jpg?t=${Date.now()}`;
+  }
+
+  function clearCameraSnapshotIntervals() {
+    cameraSnapshotIntervals.forEach((timerId) => {
+      clearInterval(timerId);
+    });
+    cameraSnapshotIntervals.clear();
+  }
+
+  async function refreshCameraCardFrame(card) {
+    if (!card) return;
+    const idx = card.getAttribute('data-camera-index');
+    const img = card.querySelector('.cam-feed-media');
+    const placeholder = card.querySelector('.cam-placeholder');
+    const status = card.querySelector('.cam-status');
+    const key = String(idx || '').trim();
+    if (!key || !img || !api.getCameraSnapshot) return;
+    if (cameraSnapshotRequests.has(key)) return;
+
+    const request = (async () => {
+      try {
+        const dataUrl = await api.getCameraSnapshot(Number(key));
+        img.src = dataUrl;
+        if (status) {
+          status.className = 'cam-status online';
+          status.textContent = cameraMode === 'live' ? 'Live' : 'Snapshot';
+        }
+      } catch {
+        img.hidden = true;
+        img.removeAttribute('src');
+        if (placeholder) placeholder.hidden = false;
+        card.classList.add('is-offline');
+        card.classList.remove('is-live');
+        if (status) {
+          status.className = 'cam-status offline';
+          status.textContent = 'Offline';
+        }
+      } finally {
+        cameraSnapshotRequests.delete(key);
+      }
+    })();
+
+    cameraSnapshotRequests.set(key, request);
+    return request;
+  }
+
+  function updateCameraSidebar() {
+    const cameras = Array.isArray(lastCameraData.cameras) ? lastCameraData.cameras : [];
+    if (cameraSidebarList) {
+      if (!cameras.length) {
+        cameraSidebarList.innerHTML = `
+          <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:.78rem;font-weight:600;color:var(--text)">No cameras detected</div>
+            <span class="cam-status offline">Offline</span>
+          </div>
+        `;
+      } else {
+        cameraSidebarList.innerHTML = cameras.slice(0, 4).map((camera, idx) => `
+          <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <div style="min-width:0">
+              <div style="font-size:.78rem;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(cameraTitle(camera, idx))}</div>
+              <div style="font-size:.64rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(cameraMeta(camera))}</div>
+            </div>
+            <span class="cam-status online">Ready</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    if (cameraDetectedCountEl) cameraDetectedCountEl.textContent = String(cameras.length);
+    if (cameraDetectedBarEl) cameraDetectedBarEl.style.width = `${Math.min(cameras.length, 4) * 25}%`;
+    if (cameraStreamStatusEl) {
+      cameraStreamStatusEl.textContent = !cameras.length
+        ? 'No signal'
+        : (cameraPanelActive ? (cameraMode === 'live' ? 'Streaming' : 'Snapshots') : 'Standby');
+    }
+  }
+
+  function attachCameraMediaHandlers() {
+    if (!cameraGrid) return;
+    cameraGrid.querySelectorAll('[data-camera-index]').forEach((card) => {
+      const img = card.querySelector('.cam-feed-media');
+      const placeholder = card.querySelector('.cam-placeholder');
+      if (!img || !placeholder) return;
+
+      img.addEventListener('load', () => {
+        placeholder.hidden = true;
+        img.hidden = false;
+        card.classList.remove('is-offline');
+        card.classList.add('is-live');
+        const status = card.querySelector('.cam-status');
+        if (status) {
+          status.className = 'cam-status online';
+          status.textContent = cameraMode === 'live' ? 'Live' : 'Snapshot';
+        }
+      });
+
+      img.addEventListener('error', () => {
+        img.hidden = true;
+        img.removeAttribute('src');
+        placeholder.hidden = false;
+        card.classList.add('is-offline');
+        card.classList.remove('is-live');
+        const status = card.querySelector('.cam-status');
+        if (status) {
+          status.className = 'cam-status offline';
+          status.textContent = 'Offline';
+        }
+      });
+
+      card.addEventListener('click', () => {
+        const idx = card.getAttribute('data-camera-index');
+        if (!idx || !lastBase) return;
+        window.open(`${lastBase}/camera/${idx}/snapshot.jpg?t=${Date.now()}`, '_blank', 'noopener');
+      });
+    });
+  }
+
+  function renderCameraPanel() {
+    if (!cameraGrid) return;
+    const cameras = Array.isArray(lastCameraData.cameras) ? lastCameraData.cameras.slice(0, 4) : [];
+    const slots = Array.from({ length: 4 }, (_, idx) => cameras[idx] || null);
+
+    cameraGrid.innerHTML = slots.map((camera, idx) => {
+      const featuredClass = idx === 0 ? ' featured' : '';
+      if (!camera) {
+        return `
+          <div class="cam-cell is-offline${featuredClass}">
+            <div class="cam-feed">
+              <div class="cam-placeholder">
+                <svg width="${idx === 0 ? 80 : 50}" height="${idx === 0 ? 80 : 50}" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+                  <path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2"></rect>
+                </svg>
+                <div>No signal</div>
+              </div>
+            </div>
+            <div class="cam-overlay"></div>
+            <div class="cam-corner"><div class="cam-dot"></div></div>
+            <div class="cam-label">
+              <span class="cam-name">${escapeHtml(cameraTitle(camera, idx))}</span>
+              <span class="cam-status offline">Offline</span>
+            </div>
+            <div class="cam-empty-note"><span>Camera not detected</span></div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="cam-cell${featuredClass}" data-camera-index="${escapeHtml(camera.index)}">
+          <div class="cam-feed">
+            <img class="cam-feed-media" alt="${escapeHtml(cameraTitle(camera, idx))}" hidden>
+            <div class="cam-placeholder">
+              <svg width="${idx === 0 ? 80 : 50}" height="${idx === 0 ? 80 : 50}" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+                <path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2"></rect>
+              </svg>
+              <div>${escapeHtml(cameraMeta(camera))}</div>
+            </div>
+          </div>
+          <div class="cam-overlay"></div>
+          <div class="cam-corner"><div class="cam-dot"></div></div>
+          <div class="cam-label">
+            <span class="cam-name">${escapeHtml(cameraTitle(camera, idx))}</span>
+            <span class="cam-status online">${cameraMode === 'live' ? 'Live' : 'Snapshot'}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    attachCameraMediaHandlers();
+    syncCameraMedia();
+    updateCameraSidebar();
+  }
+
+  function stopCameraMedia() {
+    if (!cameraGrid) return;
+    clearCameraSnapshotIntervals();
+    cameraGrid.querySelectorAll('.cam-feed-media').forEach((img) => {
+      img.hidden = true;
+      img.removeAttribute('src');
+    });
+    cameraGrid.querySelectorAll('.cam-placeholder').forEach((placeholder) => {
+      placeholder.hidden = false;
+    });
+    cameraGrid.querySelectorAll('.cam-cell[data-camera-index]').forEach((card) => {
+      card.classList.remove('is-live');
+      card.classList.add('is-offline');
+      const status = card.querySelector('.cam-status');
+      if (status) {
+        status.className = 'cam-status offline';
+        status.textContent = 'Standby';
+      }
+    });
+    updateCameraSidebar();
+  }
+
+  function syncCameraMedia() {
+    if (!cameraGrid) return;
+    if (!cameraPanelActive || !lastBase) {
+      stopCameraMedia();
+      return;
+    }
+
+    clearCameraSnapshotIntervals();
+    cameraGrid.querySelectorAll('.cam-cell[data-camera-index]').forEach((card) => {
+      const idx = card.getAttribute('data-camera-index');
+      const img = card.querySelector('.cam-feed-media');
+      const placeholder = card.querySelector('.cam-placeholder');
+      const status = card.querySelector('.cam-status');
+      if (!idx || !img) return;
+
+      card.classList.remove('is-offline');
+      if (status) {
+        status.className = 'cam-status online';
+        status.textContent = cameraMode === 'live' ? 'Live' : 'Snapshot';
+      }
+      if (placeholder) placeholder.hidden = false;
+
+      void refreshCameraCardFrame(card);
+
+      if (cameraMode === 'live') {
+        const timerId = setInterval(() => {
+          void refreshCameraCardFrame(card);
+        }, 1200);
+        cameraSnapshotIntervals.set(String(idx), timerId);
+      }
+    });
+
+    updateCameraSidebar();
+  }
+
+  async function refreshCameras() {
+    if (!api.getCameras || cameraRefreshInFlight) return;
+    cameraRefreshInFlight = true;
+    try {
+      const base = await api.detectBase();
+      if (base !== lastBase) lastBase = base;
+      const cameraData = await api.getCameras();
+      const cameras = Array.isArray(cameraData && cameraData.cameras) ? cameraData.cameras : [];
+      lastCameraData = { count: cameras.length, cameras };
+      setCameraConnectionState(cameras.length ? `${cameras.length} camera(s) online` : 'No cameras detected');
+      renderCameraPanel();
+    } catch (err) {
+      lastCameraData = { count: 0, cameras: [] };
+      setCameraConnectionState(`Camera offline: ${err && err.message ? err.message : 'unreachable'}`);
+      renderCameraPanel();
+    } finally {
+      cameraRefreshInFlight = false;
+    }
   }
 
   function openDevicePanel() {
@@ -776,6 +1117,7 @@
       const base = await api.detectBase();
       if (base !== lastBase) {
         lastBase = base;
+        syncCameraMedia();
       }
       setConnectionState(true, `Connected: ${base}`);
 
@@ -791,8 +1133,8 @@
       updateGpsFromBackend(gps, track);
 
       const backendContacts = Array.isArray(contactData && contactData.contacts) ? contactData.contacts : [];
-      contacts = combineContacts(backendContacts);
       lastMessagesData = messagesData && typeof messagesData === 'object' ? messagesData : { sms: [] };
+      contacts = combineContacts(backendContacts);
       pruneDeliveredLocalMessages(lastMessagesData.sms);
       renderContacts();
       renderMessages(lastMessagesData);
@@ -801,6 +1143,8 @@
       const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
       setConnectionState(false, `Offline: ${reason}`);
       lastStatusData = null;
+      setCameraConnectionState(`Camera offline: ${reason}`);
+      stopCameraMedia();
     }
   }
 
@@ -903,6 +1247,20 @@
     addNumberBtn.addEventListener('click', toggleExtraNumberInput);
   }
 
+  if (cameraModeLiveBtn) {
+    cameraModeLiveBtn.addEventListener('click', () => setCameraMode('live'));
+  }
+
+  if (cameraModeSnapshotBtn) {
+    cameraModeSnapshotBtn.addEventListener('click', () => setCameraMode('snapshot'));
+  }
+
+  if (cameraRefreshBtn) {
+    cameraRefreshBtn.addEventListener('click', () => {
+      refreshCameras();
+    });
+  }
+
   if (extraNumberInput) {
     extraNumberInput.addEventListener('input', updateExtraNumberUi);
     extraNumberInput.addEventListener('keydown', (evt) => {
@@ -946,13 +1304,28 @@
 
   manualContacts = loadManualContacts();
   contactAliases = loadContactAliases();
+  cameraPanelActive = !!document.getElementById('panel-camera')?.classList.contains('active');
+  setCameraMode('live');
+  renderCameraPanel();
+  refreshCameras();
 
   refreshFromPi();
   setInterval(refreshFromPi, 10000);
+  setInterval(refreshCameras, 30000);
 
   window.centerOnTracker = function () {
     if (piCarMarker && typeof map !== 'undefined') {
       map.setView(piCarMarker.getLatLng(), map.getMaxZoom(), { animate: true });
+    }
+  };
+
+  window.onDashboardPanelChange = function (name) {
+    cameraPanelActive = name === 'camera';
+    if (cameraPanelActive) {
+      refreshCameras();
+      syncCameraMedia();
+    } else {
+      stopCameraMedia();
     }
   };
 
