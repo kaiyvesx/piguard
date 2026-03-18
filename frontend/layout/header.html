@@ -23,8 +23,16 @@
   </div>
 
   <div class="header-right">
-    <div class="status-dot"></div>
-    <span id="piConnStatus" style="font-size:.72rem;color:var(--success)">GPS Active</span>
+    <div class="header-status-group">
+      <div class="status-line">
+        <div class="status-dot" id="piStatusDot"></div>
+        <span id="piConnStatus" style="font-size:.72rem;color:var(--success)">RasPi: Connecting...</span>
+      </div>
+      <div class="status-line">
+        <div class="status-dot" id="gpsStatusDot"></div>
+        <span id="gpsConnStatus" style="font-size:.72rem;color:var(--danger)">GPS: Disconnected</span>
+      </div>
+    </div>
     <button class="btn-icon" id="themeToggle" title="Switch to light mode" aria-label="Toggle theme"></button>
     <div class="btn-icon">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
