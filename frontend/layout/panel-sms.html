@@ -26,6 +26,13 @@
         <div class="thread-sub" id="smsThreadSub">Waiting for Pi contacts...</div>
       </div>
       <div style="display:flex;gap:8px">
+        <button class="btn-icon" id="smsArchiveViewBtn" type="button" title="View archived messages" style="width:32px;height:32px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="4" rx="1"/>
+            <path d="M5 7v13a1 1 0 001 1h12a1 1 0 001-1V7"/>
+            <path d="M10 12l2 2 2-2"/>
+          </svg>
+        </button>
         <button class="btn-icon" id="smsRenameBtn" type="button" title="Rename contact" style="width:32px;height:32px">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 20h9"/>
@@ -88,6 +95,21 @@
       <div class="sms-modal-actions">
         <button class="btn-add-number" id="smsModalCancel" type="button">Cancel</button>
         <button class="btn-add-number active" id="smsModalSend" type="button">Send message</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sms-modal" id="smsArchivePage" aria-hidden="true">
+    <div class="sms-modal-card sms-archive-modal-card" role="dialog" aria-modal="true" aria-labelledby="smsArchiveTitle">
+      <div class="sms-modal-header sms-archive-header">
+        <div class="sms-archive-title-wrap">
+          <div class="sms-modal-title sms-archive-title" id="smsArchiveTitle">Archived Messages</div>
+          <div class="sms-modal-sub sms-archive-sub">Archived SMS are stored locally in this app.</div>
+        </div>
+        <button class="sms-modal-close" id="smsArchiveBackBtn" type="button" aria-label="Close archive">&times;</button>
+      </div>
+      <div class="sms-archive-list" id="smsArchiveList">
+        <div class="date-divider">No archived messages yet</div>
       </div>
     </div>
   </div>

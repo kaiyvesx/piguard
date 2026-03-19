@@ -812,8 +812,15 @@
       align-self: flex-end;
     }
     .msg-resend-btn:hover { opacity: .85; }
-    .msg-forward-btn {
+    .msg-actions {
       margin-top: 4px;
+      display: flex;
+      gap: 6px;
+      align-self: flex-end;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .msg-forward-btn {
       padding: 3px 8px;
       border-radius: 8px;
       border: 1px solid var(--primary);
@@ -822,9 +829,76 @@
       font-size: 0.62rem;
       font-weight: 700;
       cursor: pointer;
-      align-self: flex-end;
     }
     .msg-forward-btn:hover { opacity: .85; }
+    .msg-archive-btn {
+      padding: 3px 8px;
+      border-radius: 8px;
+      border: 1px solid var(--warning);
+      background: rgba(255, 179, 0, 0.12);
+      color: var(--warning);
+      font-size: 0.62rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .msg-archive-btn:hover { opacity: .85; }
+    .sms-archive-modal-card {
+      width: min(640px, 100%);
+    }
+    .sms-archive-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .sms-archive-title-wrap {
+      min-width: 0;
+      flex: 1;
+    }
+    .sms-archive-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .sms-archive-sub {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .sms-archive-list {
+      min-height: 120px;
+      max-height: min(62vh, 560px);
+      overflow-y: auto;
+      margin-top: 4px;
+      padding: 4px 2px 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .sms-archive-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .sms-archive-meta {
+      font-size: 0.62rem;
+      color: var(--muted);
+    }
+    .sms-archive-message {
+      font-size: 0.78rem;
+      color: var(--text);
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .sms-archive-actions {
+      display: flex;
+      justify-content: flex-end;
+    }
     .date-divider {
       text-align: center;
       font-size: 0.62rem;

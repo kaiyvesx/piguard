@@ -21,10 +21,15 @@
   const smsModalSendBtn = document.getElementById('smsModalSend');
   const smsModalCancelBtn = document.getElementById('smsModalCancel');
   const smsModalCloseBtn = document.getElementById('smsModalClose');
+  const smsArchiveCloseBtn = document.getElementById('smsArchiveBackBtn');
   const smsBadgeEl = document.getElementById('smsBadge');
   const smsThreadAvatarEl = document.getElementById('smsThreadAvatar');
   const smsThreadNameEl = document.getElementById('smsThreadName');
   const smsThreadSubEl = document.getElementById('smsThreadSub');
+  const smsArchiveViewBtn = document.getElementById('smsArchiveViewBtn');
+  const smsArchiveBackBtn = document.getElementById('smsArchiveBackBtn');
+  const smsArchivePage = document.getElementById('smsArchivePage');
+  const smsArchiveList = document.getElementById('smsArchiveList');
   const cameraGrid = document.getElementById('cameraGrid');
   const cameraRefreshBtn = document.getElementById('cameraRefreshBtn');
   const cameraModeLiveBtn = document.getElementById('cameraModeLiveBtn');
@@ -42,9 +47,13 @@
   let manualContacts = [];
   const MANUAL_CONTACTS_KEY = 'pi-sms-manual-contacts';
   const CONTACT_ALIASES_KEY = 'pi-sms-contact-aliases';
+  const ARCHIVED_SMS_KEY = 'pi-sms-archived-messages';
   let contactAliases = {};
   let lastMessagesData = { sms: [] };
   let localOutgoingSms = [];
+  let archivedMessages = [];
+  let archivedMessageKeys = new Set();
+  let archivePageOpen = false;
   let localOutgoingCounter = 0;
   let lastStatusData = null;
   let trackPolyline = null;
@@ -63,6 +72,10 @@
 
   function getNewMessageBtn() {
     return document.getElementById('smsNewMessageBtn');
+  }
+
+  function getOpenArchiveBtn() {
+    return document.getElementById('smsOpenArchiveBtn');
   }
 
   function getExtraNumberRow() {
@@ -113,6 +126,142 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function buildArchiveKey(item) {
+    const rawId = String(item && item.id ? item.id : '').trim();
+    if (rawId) return `id:${rawId}`;
+    const direction = String(item && item.direction ? item.direction : 'out').trim() || 'out';
+    const number = String(item && item.number ? item.number : '').trim();
+    const ts = String(item && item.ts ? item.ts : '').trim();
+    const message = String(item && item.message ? item.message : '').trim();
+    return `msg:${direction}|${number}|${ts}|${message}`;
+  }
+
+  function rebuildArchivedMessageKeys() {
+    archivedMessageKeys = new Set(archivedMessages.map((item) => String(item.archiveKey || '').trim()).filter(Boolean));
+  }
+
+  function loadArchivedMessages() {
+    try {
+      const raw = localStorage.getItem(ARCHIVED_SMS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((item) => ({
+        id: item && item.id ? String(item.id) : '',
+        number: item && item.number ? String(item.number) : '',
+        message: item && item.message ? String(item.message) : '',
+        ts: item && item.ts ? String(item.ts) : '',
+        direction: item && item.direction === 'in' ? 'in' : 'out',
+        archivedAt: item && item.archivedAt ? String(item.archivedAt) : new Date().toISOString(),
+        archiveKey: item && item.archiveKey ? String(item.archiveKey) : buildArchiveKey(item),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  function saveArchivedMessages() {
+    try {
+      localStorage.setItem(ARCHIVED_SMS_KEY, JSON.stringify(archivedMessages));
+    } catch {
+      // ignore storage write errors
+    }
+  }
+
+  function isArchivedMessage(item) {
+    return archivedMessageKeys.has(buildArchiveKey(item));
+  }
+
+  function findMessageByArchiveKey(key) {
+    const clean = String(key || '').trim();
+    if (!clean) return null;
+    const candidates = [...getAllBackendThreadMessages(lastMessagesData), ...localOutgoingSms];
+    return candidates.find((item) => buildArchiveKey(item) === clean) || null;
+  }
+
+  function renderArchivedMessages() {
+    if (!smsArchiveList) return;
+
+    const sorted = [...archivedMessages].sort((a, b) => {
+      const ta = new Date(a.archivedAt || a.ts || 0).getTime();
+      const tb = new Date(b.archivedAt || b.ts || 0).getTime();
+      return tb - ta;
+    });
+
+    if (!sorted.length) {
+      smsArchiveList.innerHTML = '<div class="date-divider">No archived messages yet</div>';
+      return;
+    }
+
+    smsArchiveList.innerHTML = sorted.map((item) => {
+      const archiveKey = escapeHtml(item.archiveKey || '');
+      const number = escapeHtml(item.number || 'Unknown');
+      const message = escapeHtml(item.message || '');
+      const msgTime = escapeHtml(fmtTime(item.ts));
+      const archivedTime = escapeHtml(fmtTime(item.archivedAt));
+      const direction = item.direction === 'in' ? 'Incoming' : 'Outgoing';
+      const timeLabel = msgTime ? `${direction} · ${number} · ${msgTime}` : `${direction} · ${number}`;
+      const archivedLabel = archivedTime ? `Archived at ${archivedTime}` : 'Archived';
+      return `
+        <div class="sms-archive-card">
+          <div class="sms-archive-meta">${timeLabel}</div>
+          <div class="sms-archive-message">${message}</div>
+          <div class="sms-archive-meta">${archivedLabel}</div>
+          <div class="sms-archive-actions">
+            <button class="btn-add-number sms-unarchive-btn" type="button" data-archive-key="${archiveKey}">Unarchive</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function setArchivePageOpen(open) {
+    const nextOpen = !!open;
+    archivePageOpen = nextOpen;
+    if (smsArchivePage) {
+      smsArchivePage.classList.toggle('open', nextOpen);
+      smsArchivePage.setAttribute('aria-hidden', nextOpen ? 'false' : 'true');
+    }
+    if (nextOpen) {
+      renderArchivedMessages();
+    }
+  }
+
+  function archiveMessageByKey(key) {
+    const item = findMessageByArchiveKey(key);
+    if (!item) return;
+    const archiveKey = buildArchiveKey(item);
+    if (archivedMessageKeys.has(archiveKey)) return;
+
+    archivedMessages.unshift({
+      id: String(item.id || ''),
+      number: String(item.number || ''),
+      message: String(item.message || ''),
+      ts: String(item.ts || ''),
+      direction: item.direction === 'in' ? 'in' : 'out',
+      archivedAt: new Date().toISOString(),
+      archiveKey,
+    });
+    rebuildArchivedMessageKeys();
+    saveArchivedMessages();
+    renderContacts();
+    renderMessages(lastMessagesData);
+    updateSmsStats(lastMessagesData);
+    if (archivePageOpen) renderArchivedMessages();
+  }
+
+  function unarchiveMessageByKey(key) {
+    const clean = String(key || '').trim();
+    if (!clean) return;
+    archivedMessages = archivedMessages.filter((item) => String(item.archiveKey || '').trim() !== clean);
+    rebuildArchivedMessageKeys();
+    saveArchivedMessages();
+    renderContacts();
+    renderMessages(lastMessagesData);
+    updateSmsStats(lastMessagesData);
+    renderArchivedMessages();
   }
 
   // --- reverse geocoding (Nominatim, cached) ---
@@ -226,10 +375,11 @@
 
   function getBackendSentMessages(messagesData) {
     const sent = messagesData && Array.isArray(messagesData.sms) ? messagesData.sms : [];
-    return sent.map((item) => ({
+    return sent.map((item, idx) => ({
       ...item,
+      id: item.id || `sent-${idx}-${item.ts || ''}-${item.number || ''}-${item.message || ''}`,
       number: String(item.number || '').trim(),
-      direction: item.ok ? 'out' : 'in',
+      direction: 'out',
     }));
   }
 
@@ -254,7 +404,7 @@
     if (!key) return '';
 
     const allSms = [...getAllBackendThreadMessages(lastMessagesData), ...localOutgoingSms]
-      .filter((item) => String(item.number || '').trim() === key)
+      .filter((item) => String(item.number || '').trim() === key && !isArchivedMessage(item))
       .sort((a, b) => new Date(b.ts || 0).getTime() - new Date(a.ts || 0).getTime());
 
     if (!allSms.length) return key;
@@ -267,8 +417,9 @@
   function renderMessages(messagesData) {
     if (!messagesWrap) return;
 
-    const backendSms = getAllBackendThreadMessages(messagesData);
-    const allSms = [...backendSms, ...localOutgoingSms].sort((a, b) => {
+    const backendSms = getAllBackendThreadMessages(messagesData).filter((item) => !isArchivedMessage(item));
+    const localVisible = localOutgoingSms.filter((item) => !isArchivedMessage(item));
+    const allSms = [...backendSms, ...localVisible].sort((a, b) => {
       const ta = new Date(a.ts || 0).getTime();
       const tb = new Date(b.ts || 0).getTime();
       return ta - tb;
@@ -289,6 +440,7 @@
       const msg = escapeHtml(item.message || '');
       const time = escapeHtml(fmtTime(item.ts));
       const itemId = escapeHtml(item.id || '');
+      const archiveKey = escapeHtml(buildArchiveKey(item));
       const msgStatus = item.localStatus
         ? (item.localStatus === 'sending' ? 'Sending...' : (item.localStatus === 'sent' ? 'Sent' : 'Failed'))
         : '';
@@ -300,8 +452,11 @@
         <div class="msg ${ok}">
           <div class="msg-bubble">${msg}</div>
           <div class="msg-time">${metaParts.join(' · ')}</div>
-          <button class="msg-forward-btn" type="button">Forward</button>
-          ${item.localStatus === 'failed' ? `<button class="msg-resend-btn" type="button" data-msg-id="${itemId}">Resend</button>` : ''}
+          <div class="msg-actions">
+            <button class="msg-forward-btn" type="button">Forward</button>
+            <button class="msg-archive-btn" type="button" data-archive-key="${archiveKey}">Archive</button>
+            ${item.localStatus === 'failed' ? `<button class="msg-resend-btn" type="button" data-msg-id="${itemId}">Resend</button>` : ''}
+          </div>
         </div>
       `;
     });
@@ -314,7 +469,7 @@
     const unreadEl = document.getElementById('sms-stat-unread');
     const totalEl = document.getElementById('sms-stat-total');
     const onlineEl = document.getElementById('sms-stat-online');
-    const allSms = getAllBackendThreadMessages(messagesData);
+    const allSms = getAllBackendThreadMessages(messagesData).filter((item) => !isArchivedMessage(item));
     const incoming = allSms.filter((m) => m.direction === 'in').length;
 
     if (unreadEl) unreadEl.textContent = String(incoming);
@@ -1350,6 +1505,7 @@
       renderContacts();
       renderMessages(lastMessagesData);
       updateSmsStats(lastMessagesData);
+      renderArchivedMessages();
     } catch (err) {
       const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
       setConnectionState(false, `RasPi: Offline (${reason})`);
@@ -1505,6 +1661,12 @@
         });
         return;
       }
+      const archiveBtn = target.closest('.msg-archive-btn');
+      if (archiveBtn) {
+        evt.preventDefault();
+        archiveMessageByKey(archiveBtn.getAttribute('data-archive-key'));
+        return;
+      }
       const resendBtn = target.closest('.msg-resend-btn');
       if (!resendBtn) return;
       evt.preventDefault();
@@ -1512,9 +1674,25 @@
     });
   }
 
+  if (smsArchiveList) {
+    smsArchiveList.addEventListener('click', (evt) => {
+      const target = evt.target;
+      if (!target || !target.closest) return;
+      const unarchiveBtn = target.closest('.sms-unarchive-btn');
+      if (!unarchiveBtn) return;
+      evt.preventDefault();
+      unarchiveMessageByKey(unarchiveBtn.getAttribute('data-archive-key'));
+    });
+  }
+
   document.addEventListener('keydown', (evt) => {
-    if (evt.key === 'Escape' && smsForwardModal && smsForwardModal.classList.contains('open')) {
+    if (evt.key !== 'Escape') return;
+    if (smsForwardModal && smsForwardModal.classList.contains('open')) {
       closeSmsModal();
+      return;
+    }
+    if (archivePageOpen) {
+      setArchivePageOpen(false);
     }
   });
 
@@ -1541,11 +1719,37 @@
       return;
     }
 
+    const openArchiveControl = target.closest('#smsOpenArchiveBtn, #smsArchiveViewBtn');
+    if (openArchiveControl) {
+      evt.preventDefault();
+      setArchivePageOpen(true);
+      return;
+    }
+
+    const archiveBackControl = target.closest('#smsArchiveBackBtn');
+    if (archiveBackControl) {
+      evt.preventDefault();
+      setArchivePageOpen(false);
+      return;
+    }
+
     const renameControl = target.closest('#smsRenameBtn');
     if (!renameControl) return;
     evt.preventDefault();
     renameSelectedContact();
   });
+
+  if (smsArchivePage) {
+    smsArchivePage.addEventListener('click', (evt) => {
+      if (evt.target === smsArchivePage) {
+        setArchivePageOpen(false);
+      }
+    });
+  }
+
+  if (smsArchiveCloseBtn) {
+    smsArchiveCloseBtn.addEventListener('click', () => setArchivePageOpen(false));
+  }
 
   [smsThreadNameEl, smsThreadSubEl, smsThreadAvatarEl].filter(Boolean).forEach((el) => {
     el.style.cursor = 'pointer';
@@ -1560,10 +1764,14 @@
 
   manualContacts = loadManualContacts();
   contactAliases = loadContactAliases();
+  archivedMessages = loadArchivedMessages();
+  rebuildArchivedMessageKeys();
   cameraPanelActive = !!document.getElementById('panel-camera')?.classList.contains('active');
   setCameraMode('live');
   renderCameraPanel();
   refreshCameras();
+  renderArchivedMessages();
+  setArchivePageOpen(false);
 
   refreshFromPi();
   setInterval(refreshFromPi, 10000);
