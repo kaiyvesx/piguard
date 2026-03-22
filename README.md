@@ -1,51 +1,59 @@
 # PiGuard
 
-PiGuard is a desktop monitoring dashboard for Raspberry Pi-based field devices.  
-It runs as an Electron app and provides a unified interface for GPS tracking, SMS monitoring, and camera panel views, with live data fetched from a Pi backend.
+PiGuard is an Electron desktop dashboard for Raspberry Pi field-device monitoring. It provides a single UI for GPS, SMS, and Camera operations and reads live device data from a Pi-accessible backend.
 
-## What It Does
+## Current Features
 
-- Tracks device location on a live Leaflet/OpenStreetMap map
-- Shows GPS status, coordinates, speed, and route/track details
-- Displays SMS contacts, message threads, and send-message actions
-- Includes a camera dashboard panel for live feed placeholders
-- Surfaces device connectivity state and modem/network status from the Pi
+- GPS panel with Leaflet/OpenStreetMap rendering and live tracker updates
+- SMS panel with contact list, thread view, outgoing send flow, and resend for failed messages
+- Camera panel with per-slot actions (right-click or 3-dot settings button)
+- Camera action modal for Start/Stop recording, power actions, snapshot, and incident tagging (UI preview flow)
+- Camera recording status in sidebar, including active count, last command, and per-camera recording list (for example, "Camera 1 recording")
+- Connection/state indicators for Pi, GPS, and camera feed availability
 
 ## Project Structure
 
-- `src/main/main.js`: Electron main process and desktop window setup
-- `src/main/preload.js`: secure bridge between renderer and backend APIs
-- `src/main/ipc-handlers.js`: IPC registration placeholder for future channels
-- `src/renderer/`: dashboard UI (GPS, SMS, Camera panels)
-- `src/services/`: backend/service layer placeholders by domain
-- `backend/app.py`: Python desktop control panel entry point
-- `backend/app_2.py`: active desktop control panel implementation
+- `src/main/main.js`: Electron main process and BrowserWindow bootstrap
+- `src/main/preload.js`: secure renderer bridge (`window.piBridge`)
+- `src/main/ipc-handlers.js`: IPC registration scaffold
+- `src/renderer/pages/`: panel markup (`panel-gps.html`, `panel-sms.html`, `panel-camera.html`)
+- `src/renderer/components/`: sidebar/header partials
+- `src/renderer/css/index.css`: dashboard styling
+- `src/renderer/js/api.js`: renderer-side data flow and panel behavior
+- `src/renderer/js/index.js`: panel switching and map/search helpers
+- `src/services/`: service-layer modules (`api.js`, `gps.service.js`, `sms.service.js`, `camera.service.js`, `websocket.js`)
 - `backend/backend.py`: Python API/backend service for Pi endpoints
+- `backend/app.py`, `backend/app_1.py`, `backend/app_2.py`: Python desktop/control variants
 
 ## Tech Stack
 
-- Electron (desktop shell)
-- HTML/CSS/JavaScript (frontend dashboard)
-- Leaflet + OpenStreetMap tiles (map rendering)
-- Python (backend tooling/control panel)
+- Electron
+- HTML/CSS/JavaScript
+- Leaflet + OpenStreetMap tiles
+- Python (backend tooling/services)
 
 ## Run Locally
 
 1. Install dependencies:
-	```bash
-	npm install
-	```
-2. Start the Electron dashboard:
-	```bash
-	npm start
-	```
-3. Start the Python backend API:
-	```bash
-	python backend/backend.py
-	```
-4. Start the updated Python desktop control panel:
-	```bash
-	python backend/app.py
-	```
+   ```bash
+   npm install
+   ```
+2. Start Electron:
+   ```bash
+   npm start
+   ```
+3. Run backend API (recommended for live data):
+   ```bash
+   python backend/backend.py
+   ```
 
-Make sure your Raspberry Pi backend service is reachable from your machine for live GPS/SMS/device data.
+Optional local tools:
+
+- `python backend/app.py`
+- `python backend/app_1.py`
+- `python backend/app_2.py`
+
+## Notes
+
+- Camera Start/Stop/Power/Snapshot/Incident actions are currently UI-preview actions unless backend command handlers are wired.
+- Ensure the Pi backend host is reachable from your machine for real-time GPS/SMS/device updates.
