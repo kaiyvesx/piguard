@@ -1,10 +1,10 @@
 (function () {
   const PARTIALS = {
-    header: "layout/header.html",
-    sidebar: "layout/sidebar.html",
-    gps: "layout/panel-gps.html",
-    sms: "layout/panel-sms.html",
-    camera: "layout/panel-camera.html"
+    header: "components/header.html",
+    sidebar: "components/sidebar.html",
+    gps: "pages/panel-gps.html",
+    sms: "pages/panel-sms.html",
+    camera: "pages/panel-camera.html"
   };
 
   function loadScript(src) {
@@ -48,7 +48,7 @@
     ].join("\n");
 
     await loadScript("js/index.js");
-    await loadScript("pi-integration.js");
+    await loadScript("js/api.js");
   }
 
   bootstrapLayout().catch((err) => {

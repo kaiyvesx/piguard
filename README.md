@@ -13,9 +13,11 @@ It runs as an Electron app and provides a unified interface for GPS tracking, SM
 
 ## Project Structure
 
-- `main.js`: Electron main process and desktop window setup
-- `preload.js`: secure bridge between renderer and backend APIs
-- `frontend/`: dashboard UI (GPS, SMS, Camera panels)
+- `src/main/main.js`: Electron main process and desktop window setup
+- `src/main/preload.js`: secure bridge between renderer and backend APIs
+- `src/main/ipc-handlers.js`: IPC registration placeholder for future channels
+- `src/renderer/`: dashboard UI (GPS, SMS, Camera panels)
+- `src/services/`: backend/service layer placeholders by domain
 - `backend/app.py`: Python desktop control panel entry point
 - `backend/app_2.py`: active desktop control panel implementation
 - `backend/backend.py`: Python API/backend service for Pi endpoints

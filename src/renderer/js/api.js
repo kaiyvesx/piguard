@@ -25,11 +25,29 @@
   const cameraModeLiveBtn = document.getElementById('cameraModeLiveBtn');
   const cameraModeSnapshotBtn = document.getElementById('cameraModeSnapshotBtn');
   const cameraConnectionLabel = document.getElementById('cameraConnectionLabel');
+  const cameraActionIndicator = document.getElementById('cameraActionIndicator');
+  const cameraSlotBackdrop = document.getElementById('cameraSlotBackdrop');
+  const cameraSlotMenu = document.getElementById('cameraSlotMenu');
+  const cameraSlotMenuTarget = document.getElementById('cameraSlotMenuTarget');
+  const cameraSlotMenuCloseBtn = document.getElementById('cameraSlotMenuCloseBtn');
+  const cameraMenuRecordStartBtn = document.getElementById('cameraMenuRecordStartBtn');
+  const cameraMenuRecordStopBtn = document.getElementById('cameraMenuRecordStopBtn');
+  const cameraMenuPowerOffBtn = document.getElementById('cameraMenuPowerOffBtn');
+  const cameraMenuPowerOnBtn = document.getElementById('cameraMenuPowerOnBtn');
+  const cameraMenuCaptureBtn = document.getElementById('cameraMenuCaptureBtn');
+  const cameraMenuIncidentBtn = document.getElementById('cameraMenuIncidentBtn');
+  const cameraMenuAutoRecordChip = document.getElementById('cameraMenuAutoRecordChip');
+  const cameraMenuAudioMuteChip = document.getElementById('cameraMenuAudioMuteChip');
+  const cameraMenuNightVisionChip = document.getElementById('cameraMenuNightVisionChip');
   const cameraSidebarList = document.getElementById('cameraSidebarList');
   const cameraDetectedCountEl = document.getElementById('cameraDetectedCount');
   const cameraDetectedBarEl = document.getElementById('cameraDetectedBar');
   const cameraModeLabelEl = document.getElementById('cameraModeLabel');
   const cameraStreamStatusEl = document.getElementById('cameraStreamStatus');
+  const cameraRecordingStateEl = document.getElementById('cameraRecordingState');
+  const cameraRecordingActiveCountEl = document.getElementById('cameraRecordingActiveCount');
+  const cameraRecordingListEl = document.getElementById('cameraRecordingList');
+  const cameraRecordingLastActionEl = document.getElementById('cameraRecordingLastAction');
 
   let selectedNumber = null;
   let lastBase = null;
@@ -51,6 +69,9 @@
   let cameraRefreshInFlight = false;
   const cameraSnapshotIntervals = new Map();
   const cameraSnapshotRequests = new Map();
+  const recordingCameraIndexes = new Set();
+  let cameraMenuTargetIndex = 'all';
+  let lastRecordingActionLabel = 'No recording command sent';
 
   function setConnectionState(connected, message) {
     if (!connStatusEl) return;
@@ -153,7 +174,7 @@
     if (smsThreadAvatarEl) smsThreadAvatarEl.textContent = pickInitials(labelName);
     if (smsThreadNameEl) smsThreadNameEl.textContent = labelName;
     if (smsThreadSubEl) {
-      smsThreadSubEl.textContent = number ? `${number} · Pi backend SMS` : 'Select a contact to view messages';
+      smsThreadSubEl.textContent = number ? `${number} -+ Pi backend SMS` : 'Select a contact to view messages';
     }
 
     renderMessages(lastMessagesData);
@@ -274,7 +295,7 @@
       return `
         <div class="msg ${ok}">
           <div class="msg-bubble">${msg}</div>
-          <div class="msg-time">${metaParts.join(' · ')}</div>
+          <div class="msg-time">${metaParts.join(' -+ ')}</div>
           ${item.localStatus === 'failed' ? `<button class="msg-resend-btn" type="button" data-msg-id="${itemId}">Resend</button>` : ''}
         </div>
       `;
@@ -635,6 +656,97 @@
     if (cameraConnectionLabel) cameraConnectionLabel.textContent = message;
   }
 
+  function getCameraTargetLabel(targetIndex) {
+    if (targetIndex === 'all') return 'All Cameras';
+    const num = Number(targetIndex);
+    return Number.isFinite(num) ? `Camera ${num}` : 'Selected Camera';
+  }
+
+  function setCameraActionIndicator(message) {
+    if (!cameraActionIndicator) return;
+    cameraActionIndicator.textContent = message;
+  }
+
+  function flashCameraAction(btn) {
+    if (!btn) return;
+    btn.classList.add('active');
+    setTimeout(() => btn.classList.remove('active'), 220);
+  }
+
+  function hideCameraSlotMenu() {
+    if (cameraSlotBackdrop) cameraSlotBackdrop.hidden = true;
+    if (!cameraSlotMenu) return;
+    cameraSlotMenu.hidden = true;
+  }
+
+  function updateCameraSlotMenuTarget() {
+    if (!cameraSlotMenuTarget) return;
+    cameraSlotMenuTarget.textContent = `${getCameraTargetLabel(cameraMenuTargetIndex)} controls`;
+  }
+
+  function openCameraSlotMenuAt(cameraIndex) {
+    if (!cameraSlotMenu) return;
+    cameraMenuTargetIndex = String(cameraIndex || 'all');
+    updateCameraSlotMenuTarget();
+    if (cameraSlotBackdrop) cameraSlotBackdrop.hidden = false;
+    cameraSlotMenu.hidden = false;
+    const firstMenuBtn = cameraSlotMenu.querySelector('.cam-admin-btn');
+    if (firstMenuBtn && typeof firstMenuBtn.focus === 'function') firstMenuBtn.focus();
+  }
+
+  function queueCameraUiAction(actionText, targetIndex) {
+    const label = getCameraTargetLabel(String(targetIndex || cameraMenuTargetIndex || 'all'));
+    setCameraActionIndicator(`${actionText} for ${label} (UI preview only).`);
+  }
+
+  function getAvailableCameraIndexes() {
+    const cameras = Array.isArray(lastCameraData.cameras) ? lastCameraData.cameras.slice(0, 4) : [];
+    const indexes = cameras
+      .map((camera) => String(Number(camera && camera.index)))
+      .filter((idx) => /^\d+$/.test(idx));
+    if (indexes.length) return Array.from(new Set(indexes));
+    return ['1', '2', '3', '4'];
+  }
+
+  function resolveRecordingTargetIndexes(targetIndex) {
+    const normalized = String(targetIndex || '').trim();
+    if (!normalized || normalized === 'all') return getAvailableCameraIndexes();
+    return /^\d+$/.test(normalized) ? [normalized] : [];
+  }
+
+  function updateCameraRecordingBadges() {
+    if (!cameraGrid) return;
+    cameraGrid.querySelectorAll('.cam-cell[data-camera-index]').forEach((card) => {
+      const idx = String(card.getAttribute('data-camera-index') || '').trim();
+      const dot = card.querySelector('.cam-dot');
+      if (!dot) return;
+      dot.classList.remove('online', 'rec');
+      if (recordingCameraIndexes.has(idx)) {
+        dot.classList.add('rec');
+        return;
+      }
+      if (card.classList.contains('is-live')) {
+        dot.classList.add('online');
+      }
+    });
+  }
+
+  function applyRecordingCommand(command, targetIndex) {
+    const targets = resolveRecordingTargetIndexes(targetIndex);
+    if (!targets.length) return;
+
+    targets.forEach((idx) => {
+      if (command === 'start') recordingCameraIndexes.add(idx);
+      else recordingCameraIndexes.delete(idx);
+    });
+
+    const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const scopeLabel = getCameraTargetLabel(String(targetIndex || 'all'));
+    lastRecordingActionLabel = `${command === 'start' ? 'Start recording' : 'Stop recording'} -> ${scopeLabel} (${timeLabel})`;
+    updateCameraRecordingBadges();
+    updateCameraSidebar();
+  }
+
   function cameraTitle(camera, slotIndex) {
     if (!camera) return `Camera Slot ${slotIndex + 1}`;
     const idx = Number(camera.index);
@@ -647,7 +759,7 @@
     if (camera.device) parts.push(String(camera.device));
     if (camera.width && camera.height) parts.push(`${camera.width}x${camera.height}`);
     if (camera.fps) parts.push(`${Math.round(Number(camera.fps))} fps`);
-    return parts.join(' · ') || 'Detected camera';
+    return parts.join(' | ') || 'Detected camera';
   }
 
   function buildCameraMediaUrl(cameraIndex) {
@@ -729,13 +841,63 @@
         ? 'No signal'
         : (cameraPanelActive ? (cameraMode === 'live' ? 'Streaming' : 'Snapshots') : 'Standby');
     }
+
+    if (cameraRecordingStateEl) {
+      const isRecording = recordingCameraIndexes.size > 0;
+      cameraRecordingStateEl.textContent = isRecording ? 'Recording' : 'Stopped';
+      cameraRecordingStateEl.style.color = isRecording ? 'var(--danger)' : 'var(--success)';
+    }
+    if (cameraRecordingActiveCountEl) {
+      cameraRecordingActiveCountEl.textContent = `${recordingCameraIndexes.size} camera(s)`;
+    }
+    if (cameraRecordingListEl) {
+      const activeIndexes = Array.from(recordingCameraIndexes)
+        .map((idx) => Number(idx))
+        .filter((idx) => Number.isFinite(idx))
+        .sort((a, b) => a - b);
+
+      if (!activeIndexes.length) {
+        cameraRecordingListEl.innerHTML = '<div style="font-size:.66rem;color:var(--muted)">No cameras recording</div>';
+      } else {
+        cameraRecordingListEl.innerHTML = activeIndexes
+          .map((idx) => `<div style="font-size:.67rem;color:var(--text)">Camera ${idx} recording</div>`)
+          .join('');
+      }
+    }
+    if (cameraRecordingLastActionEl) {
+      cameraRecordingLastActionEl.textContent = lastRecordingActionLabel;
+    }
   }
 
   function attachCameraMediaHandlers() {
     if (!cameraGrid) return;
     cameraGrid.querySelectorAll('[data-camera-index]').forEach((card) => {
+      const idx = card.getAttribute('data-camera-index');
       const img = card.querySelector('.cam-feed-media');
       const placeholder = card.querySelector('.cam-placeholder');
+
+      card.addEventListener('click', () => {
+        if (!idx || !lastBase) return;
+        window.open(`${lastBase}/camera/${idx}/snapshot.jpg?t=${Date.now()}`, '_blank', 'noopener');
+      });
+
+      card.addEventListener('contextmenu', (evt) => {
+        if (!idx) return;
+        evt.preventDefault();
+        openCameraSlotMenuAt(idx);
+      });
+
+      const menuBtn = card.querySelector('.cam-menu-btn');
+      if (menuBtn) {
+        menuBtn.addEventListener('click', (evt) => {
+          evt.preventDefault();
+          evt.stopPropagation();
+          const btnIdx = menuBtn.getAttribute('data-camera-index') || idx;
+          if (!btnIdx) return;
+          openCameraSlotMenuAt(btnIdx);
+        });
+      }
+
       if (!img || !placeholder) return;
 
       img.addEventListener('load', () => {
@@ -748,6 +910,7 @@
           status.className = 'cam-status online';
           status.textContent = cameraMode === 'live' ? 'Live' : 'Snapshot';
         }
+        updateCameraRecordingBadges();
       });
 
       img.addEventListener('error', () => {
@@ -761,13 +924,9 @@
           status.className = 'cam-status offline';
           status.textContent = 'Offline';
         }
+        updateCameraRecordingBadges();
       });
 
-      card.addEventListener('click', () => {
-        const idx = card.getAttribute('data-camera-index');
-        if (!idx || !lastBase) return;
-        window.open(`${lastBase}/camera/${idx}/snapshot.jpg?t=${Date.now()}`, '_blank', 'noopener');
-      });
     });
   }
 
@@ -780,7 +939,7 @@
       const featuredClass = idx === 0 ? ' featured' : '';
       if (!camera) {
         return `
-          <div class="cam-cell is-offline${featuredClass}">
+          <div class="cam-cell is-offline${featuredClass}" data-camera-index="${idx + 1}">
             <div class="cam-feed">
               <div class="cam-placeholder">
                 <svg width="${idx === 0 ? 80 : 50}" height="${idx === 0 ? 80 : 50}" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
@@ -790,7 +949,10 @@
               </div>
             </div>
             <div class="cam-overlay"></div>
-            <div class="cam-corner"><div class="cam-dot"></div></div>
+            <div class="cam-corner">
+              <button type="button" class="cam-menu-btn" data-camera-index="${idx + 1}" aria-label="Open actions for ${escapeHtml(cameraTitle(camera, idx))}">&#8942;</button>
+              <div class="cam-dot"></div>
+            </div>
             <div class="cam-label">
               <span class="cam-name">${escapeHtml(cameraTitle(camera, idx))}</span>
               <span class="cam-status offline">Offline</span>
@@ -812,7 +974,10 @@
             </div>
           </div>
           <div class="cam-overlay"></div>
-          <div class="cam-corner"><div class="cam-dot"></div></div>
+          <div class="cam-corner">
+            <button type="button" class="cam-menu-btn" data-camera-index="${escapeHtml(camera.index)}" aria-label="Open actions for ${escapeHtml(cameraTitle(camera, idx))}">&#8942;</button>
+            <div class="cam-dot"></div>
+          </div>
           <div class="cam-label">
             <span class="cam-name">${escapeHtml(cameraTitle(camera, idx))}</span>
             <span class="cam-status online">${cameraMode === 'live' ? 'Live' : 'Snapshot'}</span>
@@ -845,6 +1010,7 @@
         status.textContent = 'Standby';
       }
     });
+    updateCameraRecordingBadges();
     updateCameraSidebar();
   }
 
@@ -880,6 +1046,7 @@
       }
     });
 
+    updateCameraRecordingBadges();
     updateCameraSidebar();
   }
 
@@ -937,7 +1104,7 @@
     const hb = st.heartbeat || {};
     const points = track && Array.isArray(track.points) ? track.points : [];
     const lastTs = points.length > 0 ? points[points.length - 1].ts : hb.last_seen_ts || null;
-    let lastUpdateLabel = '—';
+    let lastUpdateLabel = 'G��';
     if (lastTs) {
       const diff = Math.round((Date.now() - new Date(lastTs).getTime()) / 1000);
       if (diff < 10) lastUpdateLabel = 'Just now';
@@ -945,33 +1112,33 @@
       else if (diff < 3600) lastUpdateLabel = `${Math.floor(diff / 60)}m ago`;
       else lastUpdateLabel = `${Math.floor(diff / 3600)}h ago`;
     }
-    const statusText = (hb.status && String(hb.status)) || '—';
+    const statusText = (hb.status && String(hb.status)) || 'G��';
     const statusClass = /online/i.test(statusText) ? 'online' : (/moving/i.test(statusText) ? 'moving' : 'offline');
-    let connectionLabel = '—';
+    let connectionLabel = 'G��';
     const cgpaddrRaw = st.CGPADDR ? String(st.CGPADDR) : '';
     const ipMatch = cgpaddrRaw.match(/,(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
     const parsedIp = ipMatch ? ipMatch[1] : '';
     if (parsedIp && parsedIp !== '0.0.0.0') connectionLabel = `Cellular / IP: ${parsedIp}`;
     else if (st.CREG_MEANING) connectionLabel = String(st.CREG_MEANING);
     else if (cgpaddrRaw) connectionLabel = 'Cellular (no data IP)';
-    const modemLabel = (st.CSQ_MEANING && String(st.CSQ_MEANING)) || (st.AT_MEANING && String(st.AT_MEANING)) || '—';
+    const modemLabel = (st.CSQ_MEANING && String(st.CSQ_MEANING)) || (st.AT_MEANING && String(st.AT_MEANING)) || 'G��';
     const netLog = st.latest_network_log;
-    let operatorLabel = (netLog && netLog.operator && String(netLog.operator).trim()) ? String(netLog.operator).trim() : '—';
-    if (operatorLabel === '—' && st.COPS) {
+    let operatorLabel = (netLog && netLog.operator && String(netLog.operator).trim()) ? String(netLog.operator).trim() : 'G��';
+    if (operatorLabel === 'G��' && st.COPS) {
       const m = String(st.COPS).match(/,\s*"([^"]+)"/);
       if (m) operatorLabel = m[1];
     }
-    const coordsLabel = (lat != null && lon != null) ? `${lat.toFixed(5)} N, ${lon.toFixed(5)} E` : '—';
+    const coordsLabel = (lat != null && lon != null) ? `${lat.toFixed(5)} N, ${lon.toFixed(5)} E` : 'G��';
     const locLabel = (locEl && locEl.textContent && locEl.textContent.trim()) ? locEl.textContent.trim() : coordsLabel;
 
     const set = (id, text) => {
       const el = document.getElementById(id);
-      if (el) el.textContent = text != null && text !== '' ? String(text) : '—';
+      if (el) el.textContent = text != null && text !== '' ? String(text) : 'G��';
     };
     set('floatDeviceName', 'RPI-01');
     set('floatDeviceSub', 'Raspberry Pi GPS Tracker');
     set('floatLastUpdate', lastUpdateLabel);
-    set('floatSpeed', lat != null ? `${Number(speed || 0).toFixed(0)} km/h` : '—');
+    set('floatSpeed', lat != null ? `${Number(speed || 0).toFixed(0)} km/h` : 'G��');
     set('floatCoords', locLabel);
     set('floatOperator', operatorLabel);
     set('floatConnection', connectionLabel);
@@ -1013,23 +1180,23 @@
     const hasFix  = gps && gps.fix === '1';
     const gpsConnected = Boolean(hasFix && gps.lat != null && gps.lon != null);
     setGpsState(gpsConnected, gpsConnected ? 'GPS: On' : 'GPS: Disconnected');
-    const satCount = gps && gps.sat != null ? gps.sat : (points.length > 0 ? points[points.length-1].sat : '—');
+    const satCount = gps && gps.sat != null ? gps.sat : (points.length > 0 ? points[points.length-1].sat : 'G��');
 
     if (locEl) {
       if (lat !== null) {
         // show cached name instantly, then update asynchronously
         const cached = _geocodeCache.get(`${lat.toFixed(3)},${lon.toFixed(3)}`);
-        locEl.textContent = cached || `${Math.abs(lat).toFixed(5)}° ${lat>=0?'N':'S'}, ${Math.abs(lon).toFixed(5)}° ${lon>=0?'E':'W'}`;
+        locEl.textContent = cached || `${Math.abs(lat).toFixed(5)}-� ${lat>=0?'N':'S'}, ${Math.abs(lon).toFixed(5)}-� ${lon>=0?'E':'W'}`;
         if (!cached) reverseGeocode(lat, lon).then(name => { if (name && locEl) locEl.textContent = name; });
       } else {
         locEl.textContent = 'No fix yet';
       }
     }
-    if (subEl) subEl.textContent = hasFix ? 'Live GPS fix active' : (points.length > 0 ? `Last fix: ${fmtTime(points[points.length-1].ts)}` : 'Waiting for GPS fix…');
+    if (subEl) subEl.textContent = hasFix ? 'Live GPS fix active' : (points.length > 0 ? `Last fix: ${fmtTime(points[points.length-1].ts)}` : 'Waiting for GPS fixGǪ');
     if (satEl) satEl.textContent = String(satCount);
     if (altEl) {
       const alt = hasFix && gps.alt != null ? parseFloat(gps.alt).toFixed(0)+'m'
-                : (points.length > 0 ? parseFloat(points[points.length-1].alt).toFixed(0)+'m' : '—');
+                : (points.length > 0 ? parseFloat(points[points.length-1].alt).toFixed(0)+'m' : 'G��');
       altEl.textContent = alt;
     }
     if (ptsEl) ptsEl.textContent = String(track ? track.count || points.length : 0);
@@ -1039,7 +1206,7 @@
     const coordUpdEl  = document.getElementById('live-last-update');
     if (coordValEl && lat !== null) {
       const cached = _geocodeCache.get(`${lat.toFixed(3)},${lon.toFixed(3)}`);
-      coordValEl.textContent = cached || `${Math.abs(lat).toFixed(5)}° ${lat>=0?'N':'S'} · ${Math.abs(lon).toFixed(5)}° ${lon>=0?'E':'W'}`;
+      coordValEl.textContent = cached || `${Math.abs(lat).toFixed(5)}-� ${lat>=0?'N':'S'} -+ ${Math.abs(lon).toFixed(5)}-� ${lon>=0?'E':'W'}`;
       if (!cached) reverseGeocode(lat, lon).then(name => { if (name && coordValEl) coordValEl.textContent = name; });
     }
     if (coordUpdEl && points.length > 0) {
@@ -1071,7 +1238,7 @@
     // --- move/create Pi vehicle marker ---
     const lastOnlineAgo = (lastStatusData && lastStatusData.heartbeat && lastStatusData.heartbeat.last_online_ago)
       ? String(lastStatusData.heartbeat.last_online_ago)
-      : '—';
+      : 'G��';
     if (lat !== null && lon !== null && typeof map !== 'undefined') {
       if (piCarMarker) {
         piCarMarker.setLatLng([lat, lon]);
@@ -1109,7 +1276,7 @@
     if (coordsEl && lat !== null && lon !== null) {
       const ns = lat >= 0 ? 'N' : 'S';
       const ew = lon >= 0 ? 'E' : 'W';
-      coordsEl.textContent = `${Math.abs(lat).toFixed(5)}° ${ns} · ${Math.abs(lon).toFixed(5)}° ${ew}`;
+      coordsEl.textContent = `${Math.abs(lat).toFixed(5)}-� ${ns} -+ ${Math.abs(lon).toFixed(5)}-� ${ew}`;
     }
 
     // --- speed gauge ---
@@ -1275,8 +1442,61 @@
   if (cameraRefreshBtn) {
     cameraRefreshBtn.addEventListener('click', () => {
       refreshCameras();
+      setCameraActionIndicator('Refreshing camera feeds...');
     });
   }
+
+  [
+    [cameraMenuRecordStartBtn, 'Recording started', 'start'],
+    [cameraMenuRecordStopBtn, 'Recording stopped', 'stop'],
+    [cameraMenuPowerOffBtn, 'Camera power off command queued'],
+    [cameraMenuPowerOnBtn, 'Camera power on command queued'],
+    [cameraMenuCaptureBtn, 'Snapshot capture queued'],
+    [cameraMenuIncidentBtn, 'Incident flag queued'],
+  ].forEach(([btn, actionText, recordingCommand]) => {
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      flashCameraAction(btn);
+      queueCameraUiAction(actionText, cameraMenuTargetIndex);
+      if (recordingCommand) applyRecordingCommand(recordingCommand, cameraMenuTargetIndex);
+      hideCameraSlotMenu();
+    });
+  });
+
+  [cameraMenuAutoRecordChip, cameraMenuAudioMuteChip, cameraMenuNightVisionChip]
+    .filter(Boolean)
+    .forEach((chip) => {
+      chip.addEventListener('click', () => {
+        chip.classList.toggle('active');
+        chip.setAttribute('aria-checked', chip.classList.contains('active') ? 'true' : 'false');
+        const state = chip.classList.contains('active') ? 'enabled' : 'disabled';
+        const label = (chip.textContent || 'Policy').trim();
+        queueCameraUiAction(`${label} ${state}`, cameraMenuTargetIndex);
+      });
+    });
+
+  if (cameraSlotMenu) {
+    cameraSlotMenu.addEventListener('contextmenu', (evt) => evt.preventDefault());
+  }
+
+  if (cameraSlotBackdrop) {
+    cameraSlotBackdrop.addEventListener('click', hideCameraSlotMenu);
+  }
+
+  if (cameraSlotMenuCloseBtn) {
+    cameraSlotMenuCloseBtn.addEventListener('click', hideCameraSlotMenu);
+  }
+
+  document.addEventListener('click', (evt) => {
+    if (!cameraSlotMenu || cameraSlotMenu.hidden) return;
+    const target = evt.target;
+    if (target && target.closest && target.closest('#cameraSlotMenu')) return;
+    hideCameraSlotMenu();
+  });
+
+  document.addEventListener('keydown', (evt) => {
+    if (evt.key === 'Escape') hideCameraSlotMenu();
+  });
 
   if (extraNumberInput) {
     extraNumberInput.addEventListener('input', updateExtraNumberUi);

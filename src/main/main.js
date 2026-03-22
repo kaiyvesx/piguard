@@ -1,6 +1,7 @@
 const { app, BrowserWindow, session } = require('electron');
 const os = require('os');
 const path = require('path');
+require('./ipc-handlers');
 
 // Some remote/virtualized Windows setups cannot start Chromium GPU process.
 app.disableHardwareAcceleration();
@@ -62,7 +63,7 @@ function createWindow() {
     console.log('renderer loaded:', win.webContents.getURL());
   });
 
-  win.loadFile(path.join(__dirname, 'frontend', 'index.html'));
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
 app.whenReady().then(() => {

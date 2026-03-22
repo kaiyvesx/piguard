@@ -37,13 +37,15 @@ const lightTileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/
 const tileOptions  = { maxZoom: 19, subdomains: 'abcd' };
 
 let tileLayer = L.tileLayer(lightTileUrl, tileOptions).addTo(map);
+let searchMarker = null;
+let searchBoundaryLayer = null;
 
 function updateMapTiles(theme) {
   // Intentionally keep a light basemap in both UI themes.
   tileLayer.setUrl(lightTileUrl);
 }
 
-// Map starts centered on Philippines; pi-integration.js will pan to real GPS.
+// Map starts centered on Philippines; js/api.js will pan to real GPS.
 map.setView([12.8797, 121.7740], 6);
 
 
@@ -143,12 +145,86 @@ async function searchPlace() {
 
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&polygon_geojson=1&addressdetails=1`,
       { headers: { 'Accept-Language': 'en' } }
     );
     const data = await res.json();
     if (data.length) {
-      map.setView([parseFloat(data[0].lat), parseFloat(data[0].lon)], 16, { animate: true });
+      const result = data[0];
+      const lat = parseFloat(result.lat);
+      const lon = parseFloat(result.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        throw new Error('Invalid coordinates');
+      }
+
+      const placeRank = Number(result.place_rank) || 0;
+      const isExactAddress = placeRank >= 28;
+
+      if (searchBoundaryLayer) {
+        map.removeLayer(searchBoundaryLayer);
+        searchBoundaryLayer = null;
+      }
+
+      if (isExactAddress) {
+        map.setView([lat, lon], 16, { animate: true });
+
+        const searchPinIcon = L.divIcon({
+          className: 'search-pin-icon',
+          html: '<div class="search-pin-wrap"><div class="search-pin-core"></div><div class="search-pin-pulse"></div></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 26],
+        });
+
+        if (!searchMarker) {
+          searchMarker = L.marker([lat, lon], { icon: searchPinIcon }).addTo(map);
+        } else {
+          searchMarker.setLatLng([lat, lon]);
+        }
+
+        searchMarker.setZIndexOffset(1000);
+        searchMarker
+          .bindTooltip(result.display_name || query, {
+            direction: 'top',
+            offset: [0, -24],
+            className: 'marker-tooltip-last-seen',
+          })
+          .openTooltip();
+
+        setTimeout(() => {
+          if (searchMarker) searchMarker.closeTooltip();
+        }, 2400);
+      } else {
+        if (searchMarker) {
+          map.removeLayer(searchMarker);
+          searchMarker = null;
+        }
+
+        if (result.geojson) {
+          searchBoundaryLayer = L.geoJSON(result.geojson, {
+            style: {
+              color: '#ff6b35',
+              weight: 3,
+              opacity: 0.95,
+              fillColor: '#ff6b35',
+              fillOpacity: 0.08,
+            },
+          }).addTo(map);
+
+          const bounds = searchBoundaryLayer.getBounds();
+          if (bounds && bounds.isValid()) {
+            map.fitBounds(bounds, {
+              padding: [24, 24],
+              animate: true,
+              maxZoom: 14,
+            });
+          } else {
+            map.setView([lat, lon], 12, { animate: true });
+          }
+        } else {
+          map.setView([lat, lon], 12, { animate: true });
+        }
+      }
+
       toast.innerHTML = orig;
     } else {
       toast.innerHTML = '<div style="color:var(--danger)">&#x26A0;</div>&nbsp;Place not found';
@@ -209,9 +285,9 @@ themeToggle.addEventListener('click', () => {
 // ══════════════════════════════════════════
 async function loadSidebarPartials() {
   const partials = [
-    { file: 'sidebar-function/sidebar-gps.html',    wrap: 'sidebar-gps-wrap'    },
-    { file: 'sidebar-function/sidebar-sms.html',    wrap: 'sidebar-sms-wrap'    },
-    { file: 'sidebar-function/sidebar-camera.html', wrap: 'sidebar-camera-wrap' },
+    { file: 'components/sidebar-gps.html',    wrap: 'sidebar-gps-wrap'    },
+    { file: 'components/sidebar-sms.html',    wrap: 'sidebar-sms-wrap'    },
+    { file: 'components/sidebar-camera.html', wrap: 'sidebar-camera-wrap' },
   ];
   await Promise.all(partials.map(async ({ file, wrap }) => {
     try {

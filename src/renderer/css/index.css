@@ -614,6 +614,63 @@
     /* Leaflet overrides */
     .leaflet-control-zoom { display: none; }
     .leaflet-control-attribution { display: none; }
+    .search-pin-icon {
+      background: transparent;
+      border: none;
+      pointer-events: none;
+    }
+    .search-pin-wrap {
+      position: relative;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .search-pin-core {
+      width: 16px;
+      height: 16px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      background: var(--accent);
+      border: 2px solid #ffffff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+      position: relative;
+      z-index: 2;
+    }
+    .search-pin-core::after {
+      content: '';
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ffffff;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+    .search-pin-pulse {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 107, 53, 0.65);
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      animation: search-pin-pulse 1.25s ease-out 2;
+      z-index: 1;
+    }
+    @keyframes search-pin-pulse {
+      0% {
+        transform: translateX(-50%) scale(0.45);
+        opacity: 0.95;
+      }
+      100% {
+        transform: translateX(-50%) scale(1.45);
+        opacity: 0;
+      }
+    }
     .marker-tooltip-last-seen.leaflet-tooltip {
       margin-top: 0;
       padding: 6px 10px;
@@ -938,6 +995,161 @@
       min-width: 170px;
       text-align: right;
     }
+    .camera-inline-indicator {
+      margin: 8px 10px 4px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: rgba(10, 30, 54, 0.75);
+      color: var(--muted);
+      font-size: 0.67rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .cam-slot-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 948;
+      background: rgba(2, 8, 16, 0.62);
+      backdrop-filter: blur(2px);
+    }
+    .cam-slot-backdrop[hidden] {
+      display: none;
+    }
+    .cam-slot-menu {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 950;
+      width: min(420px, calc(100vw - 24px));
+      border: 1px solid rgba(0, 200, 255, 0.2);
+      border-radius: 14px;
+      background: linear-gradient(160deg, rgba(9,24,42,.98) 0%, rgba(13,35,58,.96) 100%);
+      box-shadow: 0 20px 46px rgba(0,0,0,.55), 0 0 0 1px rgba(0,200,255,.08) inset;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .cam-slot-menu[hidden] {
+      display: none;
+    }
+    .cam-slot-menu-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      padding-bottom: 2px;
+    }
+    .cam-slot-menu-sub {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: -2px;
+      margin-bottom: 2px;
+    }
+    .cam-slot-close {
+      appearance: none;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      background: rgba(255,255,255,.03);
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color .2s, color .2s, background .2s;
+    }
+    .cam-slot-close:hover,
+    .cam-slot-close:focus-visible {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: rgba(0,200,255,.1);
+      outline: none;
+    }
+    .cam-slot-menu-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .cam-admin-btn {
+      appearance: none;
+      border: 1px solid var(--card-border);
+      background: var(--surface-1);
+      color: var(--text);
+      border-radius: 8px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: .03em;
+      text-transform: uppercase;
+      padding: 9px 10px;
+      cursor: pointer;
+      transition: border-color .2s, color .2s, transform .12s, background .2s;
+    }
+    .cam-admin-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .cam-admin-btn:active {
+      transform: translateY(1px);
+    }
+    .cam-admin-btn.active {
+      border-color: var(--primary);
+      background: rgba(0,200,255,.16);
+      color: var(--primary);
+    }
+    .cam-admin-btn.danger:hover {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+    .cam-admin-btn.warning:hover {
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+    .cam-admin-btn.success:hover {
+      border-color: var(--success);
+      color: var(--success);
+    }
+    .cam-policy-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 2px;
+    }
+    .cam-policy-chip {
+      appearance: none;
+      border: 1px solid var(--card-border);
+      background: rgba(10,30,54,.7);
+      color: var(--muted);
+      border-radius: 999px;
+      font-size: 0.64rem;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      padding: 5px 10px;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .cam-policy-chip:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .cam-policy-chip.active {
+      border-color: rgba(0,200,255,.45);
+      background: rgba(0,200,255,.14);
+      color: var(--primary);
+    }
     .cam-grid {
       flex: 1;
       display: grid;
@@ -1009,6 +1221,31 @@
       top: 10px; right: 10px;
       display: flex;
       gap: 6px;
+      align-items: center;
+      z-index: 2;
+    }
+    .cam-menu-btn {
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      border: 1px solid var(--card-border);
+      background: rgba(6, 14, 26, 0.78);
+      color: var(--text);
+      font-size: 0.9rem;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color .2s, color .2s, background .2s;
+    }
+    .cam-menu-btn:hover,
+    .cam-menu-btn:focus-visible {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: rgba(0,200,255,.12);
+      outline: none;
     }
     .cam-dot {
       width: 7px; height: 7px;
@@ -1158,6 +1395,27 @@
     @media (max-width: 700px) {
       .sidebar { display: none; }
       .header-center { display: none; }
+      .camera-toolbar {
+        padding: 10px 12px;
+      }
+      .cam-toolbar-right {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .camera-connection {
+        min-width: 0;
+        width: 100%;
+        text-align: left;
+      }
+      .camera-inline-indicator {
+        margin: 8px;
+        padding: 8px;
+      }
+      .cam-slot-menu {
+        width: calc(100vw - 16px);
+        max-height: min(78vh, 560px);
+        overflow-y: auto;
+      }
       .compose-area {
         justify-content: stretch;
       }
