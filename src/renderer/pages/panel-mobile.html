@@ -1,0 +1,29 @@
+<!-- Mobile Tracking Panel -->
+<div class="panel" id="panel-mobile">
+  <div id="mobile-map" style="position:absolute;inset:0;"></div>
+
+  <div id="trackingRequestsMobile" style="position:absolute;top:56px;left:16px;z-index:650;display:flex;flex-direction:column;gap:8px;max-width:min(92vw,460px);"></div>
+
+  <div id="mobileTrackingBoard" style="position:absolute;right:18px;bottom:78px;z-index:640;background:rgba(10,22,40,.9);border:1px solid rgba(0,200,255,.25);border-radius:10px;padding:10px 12px;min-width:360px;max-width:min(92vw,560px);">
+    <div style="font-size:.68rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">Active Mobile Devices</div>
+    <div id="mobileTrackingStatus" style="font-size:.68rem;color:var(--muted);margin-bottom:6px;">No active mobile tracking.</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.72rem;">
+      <thead>
+        <tr style="color:var(--muted);text-align:left;">
+          <th style="padding:4px 6px;">Device ID</th>
+          <th style="padding:4px 6px;">Latitude</th>
+          <th style="padding:4px 6px;">Longitude</th>
+          <th style="padding:4px 6px;">Last update</th>
+        </tr>
+      </thead>
+      <tbody id="trackingDeviceRowsMobile">
+        <tr><td colspan="4" style="padding:6px;color:var(--muted);">No active tracked mobile device.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="gps-indicator">
+    <div class="dot"></div>
+    <span id="mobileGpsCoords">No active mobile tracking</span>
+  </div>
+</div>

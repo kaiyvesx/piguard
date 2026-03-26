@@ -3,6 +3,7 @@
     header: "components/header.html",
     sidebar: "components/sidebar.html",
     gps: "pages/panel-gps.html",
+    mobile: "pages/panel-mobile.html",
     sms: "pages/panel-sms.html",
     camera: "pages/panel-camera.html"
   };
@@ -29,10 +30,11 @@
     const root = document.getElementById("appRoot");
     if (!root) return;
 
-    const [headerHtml, sidebarHtml, gpsHtml, smsHtml, cameraHtml] = await Promise.all([
+    const [headerHtml, sidebarHtml, gpsHtml, mobileHtml, smsHtml, cameraHtml] = await Promise.all([
       loadPartial(PARTIALS.header),
       loadPartial(PARTIALS.sidebar),
       loadPartial(PARTIALS.gps),
+      loadPartial(PARTIALS.mobile),
       loadPartial(PARTIALS.sms),
       loadPartial(PARTIALS.camera)
     ]);
@@ -42,6 +44,7 @@
       '<div class="main">',
       sidebarHtml,
       gpsHtml,
+      mobileHtml,
       smsHtml,
       cameraHtml,
       '</div>'

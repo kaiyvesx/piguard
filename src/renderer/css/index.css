@@ -70,7 +70,7 @@
       font-weight: 700;
       color: var(--primary);
     }
-    .logo svg { width: 32px; height: 32px; }
+    .logo img { width: 32px; height: 32px; object-fit: contain; }
     .header-center {
       display: flex;
       align-items: center;
@@ -355,7 +355,10 @@
     /* ── MAP panel ── */
     #panel-gps { display: none; position: relative; }
     #panel-gps.active { display: block; }
+    #panel-mobile { display: none; position: relative; }
+    #panel-mobile.active { display: block; }
     #map { width: 100%; height: 100%; }
+    #mobile-map { width: 100%; height: 100%; }
 
     /* Floating device panel (slides in from right when marker clicked) */
     .device-panel-float {
@@ -772,6 +775,10 @@
     }
     .contact-item:hover { background: var(--surface-1); }
     .contact-item.active { background: rgba(0,200,255,.08); border-left: 3px solid var(--primary); }
+    .contact-item.multi-selected {
+      background: rgba(0,200,255,.12);
+      box-shadow: inset 0 0 0 1px rgba(0,200,255,.45);
+    }
     .contact-avatar {
       width: 38px; height: 38px;
       border-radius: 50%;
@@ -788,6 +795,22 @@
     .contact-preview { font-size: 0.67rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .contact-meta { text-align: right; }
     .contact-time { font-size: 0.6rem; color: var(--muted); }
+    .contact-archive-btn {
+      margin-top: 6px;
+      padding: 2px 7px;
+      border-radius: 7px;
+      border: 1px solid var(--card-border);
+      background: var(--surface-1);
+      color: var(--muted);
+      font-size: 0.58rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .contact-archive-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
     .contact-unread {
       width: 16px; height: 16px;
       background: var(--primary);

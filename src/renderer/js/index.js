@@ -1,9 +1,9 @@
 // ══════════════════════════════════════════
 //  PANEL SWITCHING
 // ══════════════════════════════════════════
-const panels     = { gps: 'panel-gps', sms: 'panel-sms', camera: 'panel-camera' };
-const navBtns    = { gps: 'navGps',    sms: 'navSms',    camera: 'navCamera'    };
-const sidebarCtx = { gps: 'sidebarGps', sms: 'sidebarSms', camera: 'sidebarCamera' };
+const panels     = { gps: 'panel-gps', mobile: 'panel-mobile', sms: 'panel-sms', camera: 'panel-camera' };
+const navBtns    = { gps: 'navGps',    mobile: 'navMobile',    sms: 'navSms',    camera: 'navCamera'    };
+const sidebarCtx = { gps: 'sidebarGps', mobile: 'sidebarMobile', sms: 'sidebarSms', camera: 'sidebarCamera' };
 let currentPanel = 'gps';
 
 function switchPanel(name) {
@@ -18,6 +18,9 @@ function switchPanel(name) {
   if (name === 'gps') {
     setTimeout(() => { if (typeof map !== 'undefined') map.invalidateSize(); }, 50);
   }
+  if (name === 'mobile') {
+    setTimeout(() => { if (typeof mobileMap !== 'undefined') mobileMap.invalidateSize(); }, 50);
+  }
   if (typeof window.onDashboardPanelChange === 'function') {
     window.onDashboardPanelChange(name);
   }
@@ -31,22 +34,33 @@ const map = L.map('map', {
   attributionControl: false
 }).setView([14.5820, 120.9865], 14);
 
+const mobileMap = document.getElementById('mobile-map')
+  ? L.map('mobile-map', {
+      zoomControl: false,
+      attributionControl: false
+    }).setView([14.5820, 120.9865], 14)
+  : null;
+window.mobileMap = mobileMap;
+
 // Keep map in a clear light style to match road-map references/screenshots.
 const darkTileUrl  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const lightTileUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const tileOptions  = { maxZoom: 19, subdomains: 'abcd' };
 
 let tileLayer = L.tileLayer(lightTileUrl, tileOptions).addTo(map);
+let mobileTileLayer = mobileMap ? L.tileLayer(lightTileUrl, tileOptions).addTo(mobileMap) : null;
 let searchMarker = null;
 let searchBoundaryLayer = null;
 
 function updateMapTiles(theme) {
   // Intentionally keep a light basemap in both UI themes.
   tileLayer.setUrl(lightTileUrl);
+  if (mobileTileLayer) mobileTileLayer.setUrl(lightTileUrl);
 }
 
 // Map starts centered on Philippines; js/api.js will pan to real GPS.
 map.setView([12.8797, 121.7740], 6);
+if (mobileMap) mobileMap.setView([12.8797, 121.7740], 6);
 
 
 // ── Speedometer & ETA (deferred — runs after GPS sidebar partial is injected) ──
@@ -286,6 +300,7 @@ themeToggle.addEventListener('click', () => {
 async function loadSidebarPartials() {
   const partials = [
     { file: 'components/sidebar-gps.html',    wrap: 'sidebar-gps-wrap'    },
+    { file: 'components/sidebar-mobile.html', wrap: 'sidebar-mobile-wrap' },
     { file: 'components/sidebar-sms.html',    wrap: 'sidebar-sms-wrap'    },
     { file: 'components/sidebar-camera.html', wrap: 'sidebar-camera-wrap' },
   ];

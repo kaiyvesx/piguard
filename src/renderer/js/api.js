@@ -1,8 +1,223 @@
 (function () {
-  const api = window.piBridge;
-  if (!api) {
+  const piApi = window.piBridge;
+  const backendApi = window.backendBridge;
+
+  // At least one API must be available
+  if (!piApi && !backendApi) {
+    console.error('No API bridge available');
     return;
   }
+
+  // Backend connection state
+  let backendConnected = false;
+  let useBackend = false; // Set to true to prefer WebSocket backend over direct Pi HTTP
+
+  // Initialize backend connection if available
+  if (backendApi) {
+    backendApi.connect()
+      .then((result) => {
+        if (result && result.success) {
+          console.log('[API] Backend connected via WebSocket');
+          backendConnected = true;
+          // Update UI to show backend status
+          updateBackendConnectionStatus(true);
+        }
+      })
+      .catch((err) => {
+        console.warn('[API] Backend connection failed, using Pi direct:', err.message);
+        backendConnected = false;
+      });
+
+    // Listen for backend events
+    backendApi.on('connected', () => {
+      console.log('[API] Backend reconnected');
+      backendConnected = true;
+      updateBackendConnectionStatus(true);
+    });
+
+    backendApi.on('disconnected', () => {
+      console.log('[API] Backend disconnected');
+      backendConnected = false;
+      updateBackendConnectionStatus(false);
+    });
+
+    backendApi.on('command_response', (data) => {
+      console.log('[API] Command response:', data.action, data.status);
+      // Handle real-time responses here if needed
+      if (data && (data.action === 'tracking_approved' || data.action === 'tracking_rejected')) {
+        const did = String(data.device_id || '').trim();
+        if (did) {
+          pendingTrackingRequests.delete(did);
+          renderTrackingRequestBanners();
+          if (data.action === 'tracking_rejected') {
+            removeDeviceLocationLayer(did);
+          }
+        }
+      }
+    });
+
+    backendApi.on('command_queued', (data) => {
+      console.log('[API] Command queued (device offline):', data.action);
+      // Show notification that device is offline
+    });
+
+    backendApi.on('device_event', (data) => {
+      handleBackendDeviceEvent(data);
+    });
+
+    if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+      window.electronAPI.on('tracking:request', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_request' }));
+      window.electronAPI.on('tracking:location', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
+      window.electronAPI.on('tracking:session_end', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_session_end' }));
+      window.electronAPI.on('tracking:approved', (_evt, data) => {
+        const did = String(data && data.device_id || '').trim();
+        if (did) {
+          pendingTrackingRequests.delete(did);
+          renderTrackingRequestBanners();
+        }
+      });
+      window.electronAPI.on('tracking:rejected', (_evt, data) => {
+        const did = String(data && data.device_id || '').trim();
+        if (did) {
+          pendingTrackingRequests.delete(did);
+          renderTrackingRequestBanners();
+          removeDeviceLocationLayer(did);
+        }
+      });
+    }
+  }
+
+  function updateBackendConnectionStatus(connected) {
+    const backendStatusEl = document.getElementById('backendConnStatus');
+    const backendDotEl = document.getElementById('backendStatusDot');
+    if (backendStatusEl) {
+      backendStatusEl.style.color = connected ? 'var(--success)' : 'var(--danger)';
+      backendStatusEl.textContent = connected ? 'Backend Connected' : 'Backend Disconnected';
+    }
+    if (backendDotEl) {
+      backendDotEl.style.background = connected ? 'var(--success)' : 'var(--danger)';
+    }
+  }
+
+  // Unified API wrapper - tries backend first if enabled, falls back to Pi direct
+  const api = {
+    // Use Pi direct API by default, but can switch to backend
+    detectBase: () => piApi ? piApi.detectBase() : Promise.reject(new Error('Pi API not available')),
+
+    getStatus: async () => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.getDeviceInfo();
+        } catch (err) {
+          console.warn('[API] Backend getStatus failed:', err.message);
+        }
+      }
+      return piApi ? piApi.getStatus() : Promise.reject(new Error('No API available'));
+    },
+
+    getGpsLatest: async () => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.getGps();
+        } catch (err) {
+          console.warn('[API] Backend getGps failed:', err.message);
+        }
+      }
+      return piApi ? piApi.getGpsLatest() : Promise.reject(new Error('No API available'));
+    },
+
+    getGpsTrack: async () => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.getGpsTrack();
+        } catch (err) {
+          console.warn('[API] Backend getGpsTrack failed:', err.message);
+        }
+      }
+      return piApi ? piApi.getGpsTrack() : Promise.reject(new Error('No API available'));
+    },
+
+    getCameras: async () => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.getCameras();
+        } catch (err) {
+          console.warn('[API] Backend getCameras failed:', err.message);
+        }
+      }
+      return piApi ? piApi.getCameras() : Promise.reject(new Error('No API available'));
+    },
+
+    getCameraSnapshot: async (cameraIndex) => {
+      // Camera snapshots still use Pi direct for binary data
+      return piApi ? piApi.getCameraSnapshot(cameraIndex) : Promise.reject(new Error('No API available'));
+    },
+
+    getContacts: async () => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.getContacts();
+        } catch (err) {
+          console.warn('[API] Backend getContacts failed:', err.message);
+        }
+      }
+      return piApi ? piApi.getContacts() : Promise.reject(new Error('No API available'));
+    },
+
+    getMessages: async () => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.getMessages();
+        } catch (err) {
+          console.warn('[API] Backend getMessages failed:', err.message);
+        }
+      }
+      return piApi ? piApi.getMessages() : Promise.reject(new Error('No API available'));
+    },
+
+    sendSms: async (numbers, message) => {
+      if (useBackend && backendConnected && backendApi) {
+        try {
+          return await backendApi.sendSms(numbers, message);
+        } catch (err) {
+          console.warn('[API] Backend sendSms failed:', err.message);
+        }
+      }
+      return piApi ? piApi.sendSms(numbers, message) : Promise.reject(new Error('No API available'));
+    },
+
+    // New backend-only methods
+    takePhoto: async (options) => {
+      if (backendApi && backendConnected) {
+        return await backendApi.takePhoto(options);
+      }
+      throw new Error('Backend not connected');
+    },
+
+    makeCall: async (number) => {
+      if (backendApi && backendConnected) {
+        return await backendApi.makeCall(number);
+      }
+      throw new Error('Backend not connected');
+    },
+
+    sendCommand: async (action, payload, deviceId) => {
+      if (backendApi && backendConnected) {
+        return await backendApi.sendCommand(action, payload, deviceId);
+      }
+      throw new Error('Backend not connected');
+    },
+
+    // Backend connection controls
+    isBackendConnected: () => backendConnected,
+    setUseBackend: (use) => { useBackend = use; },
+    getUseBackend: () => useBackend,
+    connectBackend: () => backendApi ? backendApi.connect() : Promise.reject(new Error('Backend API not available')),
+    disconnectBackend: () => backendApi ? backendApi.disconnect() : null,
+  };
+
+  // Expose unified API globally for debugging
+  window.unifiedApi = api;
 
   const connStatusEl = document.getElementById('piConnStatus');
   const gpsStatusEl = document.getElementById('gpsConnStatus');
@@ -11,6 +226,8 @@
   const contactsWrap = document.getElementById('smsContactsList');
   const messagesWrap = document.getElementById('smsMessagesArea');
   const composeInput = document.getElementById('smsComposeInput');
+  const newMessageBtn = document.getElementById('smsNewMessageBtn');
+  const openArchiveBtn = document.getElementById('smsOpenArchiveBtn');
   const addNumberBtn = document.getElementById('smsAddNumberBtn');
   const extraNumberRow = document.getElementById('smsExtraRow');
   const extraNumberInput = document.getElementById('smsExtraNumberInput');
@@ -48,14 +265,22 @@
   const cameraRecordingActiveCountEl = document.getElementById('cameraRecordingActiveCount');
   const cameraRecordingListEl = document.getElementById('cameraRecordingList');
   const cameraRecordingLastActionEl = document.getElementById('cameraRecordingLastAction');
+  const trackingRequestsEl = document.getElementById('trackingRequestsMobile') || document.getElementById('trackingRequestsSidebar') || document.getElementById('trackingRequests');
+  const trackingDeviceRowsEl = document.getElementById('trackingDeviceRowsMobile') || document.getElementById('trackingDeviceRowsSidebar') || document.getElementById('trackingDeviceRows');
+  const mobileTrackingStatusEl = document.getElementById('mobileTrackingStatus');
 
   let selectedNumber = null;
   let lastBase = null;
   let contacts = [];
   let manualContacts = [];
   const MANUAL_CONTACTS_KEY = 'pi-sms-manual-contacts';
+  const ARCHIVED_CONTACTS_KEY = 'pi-sms-archived-contacts';
   const CONTACT_ALIASES_KEY = 'pi-sms-contact-aliases';
   let contactAliases = {};
+  let archivedContacts = new Set();
+  let archiveViewMode = false;
+  let composeMultiMode = false;
+  let selectedRecipients = new Set();
   let lastMessagesData = { sms: [] };
   let localOutgoingSms = [];
   let localOutgoingCounter = 0;
@@ -72,11 +297,17 @@
   const recordingCameraIndexes = new Set();
   let cameraMenuTargetIndex = 'all';
   let lastRecordingActionLabel = 'No recording command sent';
+  const pendingTrackingRequests = new Map();
+  const deviceLayers = new Map();
+  const deviceColors = new Map();
+  const colorOrder = ['#2196F3', '#4CAF50', '#FF9800'];
 
-  function setConnectionState(connected, message) {
+  function setConnectionState(connected, message, tooltip = '') {
     if (!connStatusEl) return;
     connStatusEl.style.color = connected ? 'var(--success)' : 'var(--danger)';
     connStatusEl.textContent = message;
+    connStatusEl.title = tooltip || message;
+    connStatusEl.style.cursor = tooltip ? 'help' : 'default';
     if (piStatusDotEl) piStatusDotEl.style.background = connected ? 'var(--success)' : 'var(--danger)';
   }
 
@@ -109,6 +340,264 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  function getTrackingAction(event) {
+    const payload = event && typeof event.payload === 'object' ? event.payload : {};
+    return String(event?.action || event?.event || payload?.action || payload?.type || '').trim().toLowerCase();
+  }
+
+  function getTrackingDeviceId(event) {
+    const payload = event && typeof event.payload === 'object' ? event.payload : {};
+    return String(event?.device_id || payload?.device_id || '').trim();
+  }
+
+  function isMobileTrackingDevice(deviceId) {
+    const id = String(deviceId || '').trim().toLowerCase();
+    if (!id) return false;
+    return id === '13e1b5b146eba495' || id.includes('mobile');
+  }
+
+  function getTrackingMap() {
+    return window.mobileMap || (typeof map !== 'undefined' ? map : null);
+  }
+
+  function getDeviceColor(deviceId) {
+    if (deviceColors.has(deviceId)) return deviceColors.get(deviceId);
+    const id = String(deviceId || '').toLowerCase();
+    let color = '#FF9800';
+    if (id === '13e1b5b146eba495' || id.includes('mobile')) {
+      color = '#2196F3';
+    } else if (!Array.from(deviceColors.values()).includes('#4CAF50')) {
+      color = '#4CAF50';
+    } else {
+      const index = deviceColors.size % colorOrder.length;
+      color = colorOrder[index];
+    }
+    deviceColors.set(deviceId, color);
+    return color;
+  }
+
+  function buildDeviceIcon(color, waiting = false) {
+    const fill = waiting ? `${color}AA` : color;
+    const border = waiting ? '2px dashed #fff' : '2px solid #fff';
+    return L.divIcon({
+      className: '',
+      html: `<div style="width:18px;height:18px;border-radius:50%;background:${fill};border:${border};box-shadow:0 0 0 4px ${color}55,0 2px 8px rgba(0,0,0,.25);"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+  }
+
+  function renderTrackingRequestBanners() {
+    if (!trackingRequestsEl) return;
+    const items = Array.from(pendingTrackingRequests.values());
+    if (!items.length) {
+      trackingRequestsEl.innerHTML = '';
+      return;
+    }
+
+    trackingRequestsEl.innerHTML = items.map((request) => `
+      <div class="tracking-request-card" data-device-id="${escapeHtml(request.device_id)}" style="background:rgba(10,22,40,.9);border:1px solid rgba(0,200,255,.35);border-radius:10px;padding:10px 12px;box-shadow:0 6px 16px rgba(0,0,0,.25);">
+        <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Tracking request</div>
+        <div style="font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:2px;">${escapeHtml(request.device_id)}</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px;">Requested at: ${escapeHtml(request.requested_at)}</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button type="button" class="tracking-reject-btn" data-device-id="${escapeHtml(request.device_id)}" style="height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--card-border);background:var(--surface-1);color:var(--text);cursor:pointer;">Deny</button>
+          <button type="button" class="tracking-accept-btn" data-device-id="${escapeHtml(request.device_id)}" style="height:30px;padding:0 10px;border-radius:8px;border:1px solid #2196F3;background:#2196F3;color:#fff;cursor:pointer;font-weight:700;">Accept</button>
+        </div>
+      </div>
+    `).join('');
+
+    trackingRequestsEl.querySelectorAll('.tracking-accept-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        void respondToTrackingRequestById(btn.getAttribute('data-device-id'), true);
+      });
+    });
+    trackingRequestsEl.querySelectorAll('.tracking-reject-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        void respondToTrackingRequestById(btn.getAttribute('data-device-id'), false);
+      });
+    });
+  }
+
+  async function respondToTrackingRequestById(deviceId, approved) {
+    const targetDeviceId = String(deviceId || '').trim();
+    if (!targetDeviceId) return;
+    const action = approved ? 'tracking_approved' : 'tracking_rejected';
+    const payload = approved
+      ? { approved_by: 'electron-admin', approved_at: new Date().toISOString() }
+      : { reason: 'Permission denied by admin', denied_at: new Date().toISOString() };
+
+    try {
+      await api.sendCommand(action, payload, targetDeviceId);
+      pendingTrackingRequests.delete(targetDeviceId);
+      renderTrackingRequestBanners();
+      if (approved) {
+        ensureDevicePlaceholderLayer(targetDeviceId);
+      }
+    } catch (err) {
+      const reason = err && err.message ? err.message : 'Failed to send decision';
+      alert(`Failed to send ${action}: ${reason}`);
+    }
+  }
+
+  function ensureDevicePlaceholderLayer(deviceId) {
+    const trackingMap = getTrackingMap();
+    if (!trackingMap) return;
+    const targetDeviceId = String(deviceId || '').trim();
+    if (!targetDeviceId || deviceLayers.has(targetDeviceId)) return;
+
+    const center = trackingMap.getCenter();
+    const lat = Number(center.lat);
+    const lon = Number(center.lng);
+    const color = getDeviceColor(targetDeviceId);
+    const marker = L.marker([lat, lon], { icon: buildDeviceIcon(color, true) }).addTo(trackingMap);
+    const routeLine = L.polyline([], { color, weight: 3, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(trackingMap);
+    marker.bindTooltip(`${targetDeviceId} (waiting for first GPS fix)`, { direction: 'top', offset: [0, -12] });
+
+    deviceLayers.set(targetDeviceId, {
+      marker,
+      routeLine,
+      routePoints: [],
+      color,
+      waiting: true,
+      lastLat: null,
+      lastLon: null,
+      lastUpdate: null,
+    });
+    updateTrackingCoordsRows();
+    fitMapToAllTrackingDevices();
+  }
+
+  function updateTrackingCoordsRows() {
+    if (!trackingDeviceRowsEl) return;
+    const rows = Array.from(deviceLayers.entries());
+    if (!rows.length) {
+      trackingDeviceRowsEl.innerHTML = '<tr><td colspan="4" style="padding:6px;color:var(--muted);">No active tracked mobile device.</td></tr>';
+      if (mobileTrackingStatusEl) mobileTrackingStatusEl.textContent = 'No active mobile tracking.';
+      return;
+    }
+
+    trackingDeviceRowsEl.innerHTML = rows.map(([deviceId, layer]) => {
+      const lat = Number.isFinite(Number(layer.lastLat)) ? Number(layer.lastLat).toFixed(6) : '-';
+      const lon = Number.isFinite(Number(layer.lastLon)) ? Number(layer.lastLon).toFixed(6) : '-';
+      const lastUpdate = layer.lastUpdate ? fmtTime(layer.lastUpdate) : '-';
+      return `<tr>
+        <td style="padding:4px 6px;white-space:nowrap;">${escapeHtml(deviceId)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(lat)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(lon)}</td>
+        <td style="padding:4px 6px;">${escapeHtml(lastUpdate)}</td>
+      </tr>`;
+    }).join('');
+
+    if (mobileTrackingStatusEl) {
+      const activeCount = rows.length;
+      mobileTrackingStatusEl.textContent = `${activeCount} active mobile device${activeCount === 1 ? '' : 's'}.`;
+    }
+  }
+
+  function fitMapToAllTrackingDevices() {
+    const trackingMap = getTrackingMap();
+    if (!trackingMap) return;
+    const points = Array.from(deviceLayers.values())
+      .filter((layer) => layer && layer.marker)
+      .map((layer) => layer.marker.getLatLng());
+    if (!points.length) return;
+    if (points.length === 1) {
+      trackingMap.setView(points[0], Math.max(trackingMap.getZoom(), 15), { animate: true });
+      return;
+    }
+    trackingMap.fitBounds(L.latLngBounds(points), { padding: [36, 36], maxZoom: 16, animate: true });
+  }
+
+  function upsertDeviceLocationLayer(event) {
+    const trackingMap = getTrackingMap();
+    if (!trackingMap) return;
+    const deviceId = getTrackingDeviceId(event);
+    if (!deviceId) return;
+    if (!isMobileTrackingDevice(deviceId)) return;
+
+    const payload = event && typeof event.payload === 'object' ? event.payload : {};
+    const nested = payload && typeof payload.payload === 'object' ? payload.payload : null;
+    const source = payload.latitude != null || payload.longitude != null
+      ? payload
+      : (nested && (nested.latitude != null || nested.longitude != null) ? nested : event);
+
+    const lat = toNum(source.latitude != null ? source.latitude : source.lat);
+    const lon = toNum(source.longitude != null ? source.longitude : source.lng);
+    if (lat == null || lon == null) return;
+
+    const color = getDeviceColor(deviceId);
+    let layer = deviceLayers.get(deviceId);
+    if (!layer) {
+      const icon = buildDeviceIcon(color, false);
+      const marker = L.marker([lat, lon], { icon }).addTo(trackingMap);
+      const routeLine = L.polyline([], { color, weight: 3, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(trackingMap);
+      layer = { marker, routeLine, routePoints: [], color, waiting: false, lastLat: lat, lastLon: lon, lastUpdate: source.timestamp || event.received_at || Date.now() };
+      deviceLayers.set(deviceId, layer);
+    } else if (layer.waiting) {
+      layer.marker.setIcon(buildDeviceIcon(layer.color || color, false));
+      layer.waiting = false;
+    }
+
+    layer.lastLat = lat;
+    layer.lastLon = lon;
+    layer.lastUpdate = source.timestamp || event.received_at || Date.now();
+    layer.routePoints.push([lat, lon]);
+    layer.marker.setLatLng([lat, lon]);
+    layer.routeLine.setLatLngs(layer.routePoints);
+    layer.marker.bindTooltip(`${deviceId}`, { direction: 'top', offset: [0, -12] });
+
+    const mobileCoordsEl = document.getElementById('mobileGpsCoords');
+    if (mobileCoordsEl) mobileCoordsEl.textContent = `${deviceLayers.size} active mobile device(s)`;
+
+    updateTrackingCoordsRows();
+    fitMapToAllTrackingDevices();
+  }
+
+  function removeDeviceLocationLayer(deviceId) {
+    const trackingMap = getTrackingMap();
+    const target = String(deviceId || '').trim();
+    if (!target) return;
+    const layer = deviceLayers.get(target);
+    if (!layer) return;
+    if (layer.marker && trackingMap) trackingMap.removeLayer(layer.marker);
+    if (layer.routeLine && trackingMap) trackingMap.removeLayer(layer.routeLine);
+    deviceLayers.delete(target);
+    const mobileCoordsEl = document.getElementById('mobileGpsCoords');
+    if (mobileCoordsEl && deviceLayers.size === 0) mobileCoordsEl.textContent = 'No active mobile tracking';
+    updateTrackingCoordsRows();
+    fitMapToAllTrackingDevices();
+  }
+
+  function handleBackendDeviceEvent(event) {
+    if (!event || typeof event !== 'object') return;
+    const action = getTrackingAction(event);
+    const deviceId = getTrackingDeviceId(event);
+    if (!action || !deviceId) return;
+    if (!isMobileTrackingDevice(deviceId)) return;
+
+    if (action === 'tracking_request') {
+      const payload = event && typeof event.payload === 'object' ? event.payload : {};
+      pendingTrackingRequests.set(deviceId, {
+        device_id: deviceId,
+        requested_at: payload?.payload?.requested_at || payload?.requested_at || new Date().toISOString(),
+      });
+      renderTrackingRequestBanners();
+      return;
+    }
+
+    if (action === 'location_update') {
+      upsertDeviceLocationLayer(event);
+      return;
+    }
+
+    if (action === 'tracking_session_end') {
+      pendingTrackingRequests.delete(deviceId);
+      renderTrackingRequestBanners();
+      removeDeviceLocationLayer(deviceId);
+    }
   }
 
   // --- reverse geocoding (Nominatim, cached) ---
@@ -180,22 +669,161 @@
     renderMessages(lastMessagesData);
   }
 
+  function loadArchivedContacts() {
+    try {
+      const raw = localStorage.getItem(ARCHIVED_CONTACTS_KEY);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(
+        parsed
+          .map((item) => String(item || '').trim())
+          .filter(Boolean)
+      );
+    } catch {
+      return new Set();
+    }
+  }
+
+  function saveArchivedContacts() {
+    try {
+      localStorage.setItem(ARCHIVED_CONTACTS_KEY, JSON.stringify(Array.from(archivedContacts)));
+    } catch {
+      // ignore storage write errors
+    }
+  }
+
+  function isArchivedNumber(number) {
+    return archivedContacts.has(String(number || '').trim());
+  }
+
+  function getVisibleContacts() {
+    return contacts.filter((item) => {
+      const key = String(item && item.number || '').trim();
+      if (!key) return false;
+      return archiveViewMode ? isArchivedNumber(key) : !isArchivedNumber(key);
+    });
+  }
+
+  function updateArchiveButtonUi() {
+    if (!openArchiveBtn) return;
+    openArchiveBtn.classList.toggle('active', archiveViewMode);
+    openArchiveBtn.textContent = archiveViewMode ? 'Back to Inbox' : 'Archived';
+  }
+
+  function updateNewMessageButtonUi() {
+    if (!newMessageBtn) return;
+    newMessageBtn.classList.toggle('active', composeMultiMode);
+    newMessageBtn.textContent = composeMultiMode ? 'Cancel new message' : 'New message';
+  }
+
+  function updateComposeThreadUi() {
+    if (!composeMultiMode) return;
+    const count = selectedRecipients.size;
+    if (smsThreadAvatarEl) smsThreadAvatarEl.textContent = 'NM';
+    if (smsThreadNameEl) smsThreadNameEl.textContent = count ? `New message (${count})` : 'New message';
+    if (smsThreadSubEl) {
+      smsThreadSubEl.textContent = count
+        ? `Recipients selected: ${count}. Type your message and send.`
+        : 'Select contacts or add a number, then send.';
+    }
+  }
+
+  function enterMultiComposeMode() {
+    composeMultiMode = true;
+    selectedRecipients = new Set();
+    if (selectedNumber) selectedRecipients.add(String(selectedNumber).trim());
+    if (extraNumberRow) extraNumberRow.removeAttribute('hidden');
+    if (addNumberBtn) addNumberBtn.classList.add('active');
+    updateNewMessageButtonUi();
+    renderContacts();
+    updateComposeThreadUi();
+    if (composeInput) composeInput.focus();
+  }
+
+  function exitMultiComposeMode() {
+    composeMultiMode = false;
+    selectedRecipients = new Set();
+    if (extraNumberRow) extraNumberRow.setAttribute('hidden', '');
+    if (extraNumberInput) extraNumberInput.value = '';
+    if (extraNumberHint) {
+      extraNumberHint.textContent = 'Numbers only, up to 11 digits.';
+      extraNumberHint.className = 'sms-extra-hint';
+    }
+    if (addNumberBtn) {
+      addNumberBtn.classList.remove('active');
+      addNumberBtn.classList.remove('added');
+    }
+    updateNewMessageButtonUi();
+    renderContacts();
+    setSelectedNumber(selectedNumber || (contacts[0] && contacts[0].number) || null);
+  }
+
+  function toggleComposeRecipient(number) {
+    const key = String(number || '').trim();
+    if (!key) return;
+    if (selectedRecipients.has(key)) selectedRecipients.delete(key);
+    else selectedRecipients.add(key);
+    renderContacts();
+    updateComposeThreadUi();
+  }
+
+  function toggleArchiveForNumber(number) {
+    const key = String(number || '').trim();
+    if (!key) return;
+    if (archivedContacts.has(key)) archivedContacts.delete(key);
+    else archivedContacts.add(key);
+    saveArchivedContacts();
+    renderContacts();
+
+    const visible = getVisibleContacts();
+    const stillVisible = visible.some((item) => String(item.number || '').trim() === String(selectedNumber || '').trim());
+    if (!stillVisible) {
+      const next = visible[0] ? String(visible[0].number || '').trim() : null;
+      if (next) setSelectedNumber(next);
+      else {
+        selectedNumber = null;
+        renderMessages(lastMessagesData);
+      }
+    }
+  }
+
+  function toggleArchiveView() {
+    archiveViewMode = !archiveViewMode;
+    updateArchiveButtonUi();
+    renderContacts();
+
+    const visible = getVisibleContacts();
+    const selectedVisible = visible.some((item) => String(item.number || '').trim() === String(selectedNumber || '').trim());
+    if (!selectedVisible) {
+      const next = visible[0] ? String(visible[0].number || '').trim() : null;
+      if (next) setSelectedNumber(next);
+      else {
+        selectedNumber = null;
+        renderMessages(lastMessagesData);
+      }
+    }
+  }
+
   function renderContacts() {
     if (!contactsWrap || !Array.isArray(contacts)) return;
 
-    if (!contacts.length) {
-      contactsWrap.innerHTML = '<div style="padding:12px 14px;color:var(--muted);font-size:.72rem">No contacts or message threads yet.</div>';
+    const visibleContacts = getVisibleContacts();
+
+    if (!visibleContacts.length) {
+      contactsWrap.innerHTML = `<div style="padding:12px 14px;color:var(--muted);font-size:.72rem">${archiveViewMode ? 'No archived threads yet.' : 'No contacts or message threads yet.'}</div>`;
       return;
     }
 
-    const activeNumber = selectedNumber || (contacts[0] && contacts[0].number) || '';
-    contactsWrap.innerHTML = contacts.map((c) => {
+    const activeNumber = selectedNumber || (visibleContacts[0] && visibleContacts[0].number) || '';
+    contactsWrap.innerHTML = visibleContacts.map((c) => {
       const name = escapeHtml(getDisplayName(c.number, c.name || 'Unnamed'));
       const number = escapeHtml(c.number || '');
       const preview = escapeHtml(getLatestMessagePreview(c.number));
       const initials = escapeHtml(pickInitials(getDisplayName(c.number, c.name)));
+      const isRecipient = selectedRecipients.has(String(c.number || '').trim());
       return `
-        <div class="contact-item${number === activeNumber ? ' active' : ''}" data-number="${number}">
+        <div class="contact-item${number === activeNumber ? ' active' : ''}${composeMultiMode && isRecipient ? ' multi-selected' : ''}" data-number="${number}">
           <div class="contact-avatar">${initials}</div>
           <div class="contact-info">
             <div class="contact-name">${name}</div>
@@ -203,6 +831,7 @@
           </div>
           <div class="contact-meta">
             <div class="contact-time">Pi</div>
+            <button class="contact-archive-btn" type="button" data-number="${number}" title="${archiveViewMode ? 'Unarchive thread' : 'Archive thread'}">${archiveViewMode ? 'Unarchive' : 'Archive'}</button>
           </div>
         </div>
       `;
@@ -210,14 +839,31 @@
 
     contactsWrap.querySelectorAll('.contact-item').forEach((el) => {
       el.addEventListener('click', () => {
-        setSelectedNumber(el.getAttribute('data-number'));
+        const clickedNumber = el.getAttribute('data-number');
+        if (composeMultiMode) {
+          toggleComposeRecipient(clickedNumber);
+          return;
+        }
+        setSelectedNumber(clickedNumber);
       });
       el.addEventListener('dblclick', () => {
         renameSelectedContact(el.getAttribute('data-number'));
       });
     });
 
-    setSelectedNumber(activeNumber);
+    contactsWrap.querySelectorAll('.contact-archive-btn').forEach((btn) => {
+      btn.addEventListener('click', (evt) => {
+        evt.preventDefault();
+        evt.stopPropagation();
+        toggleArchiveForNumber(btn.getAttribute('data-number'));
+      });
+    });
+
+    if (!composeMultiMode) {
+      setSelectedNumber(activeNumber);
+    } else {
+      updateComposeThreadUi();
+    }
   }
 
   function getBackendSentMessages(messagesData) {
@@ -545,6 +1191,211 @@
     setSelectedNumber(key);
   }
 
+  function openNewMessageModal() {
+    const visibleContacts = contacts.filter((item) => {
+      const key = String(item && item.number || '').trim();
+      return key && !isArchivedNumber(key);
+    });
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999;';
+
+      const card = document.createElement('div');
+      card.style.cssText = 'width:min(94vw,520px);max-height:88vh;overflow:auto;background:var(--card-bg,#0f1724);border:1px solid var(--card-border,#2a3446);border-radius:12px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.45);color:var(--text,#e7edf5);';
+
+      const title = document.createElement('div');
+      title.textContent = 'New Message';
+      title.style.cssText = 'font-size:.95rem;font-weight:700;margin-bottom:6px;';
+
+      const subtitle = document.createElement('div');
+      subtitle.textContent = 'Select one or more recipients, then send.';
+      subtitle.style.cssText = 'font-size:.72rem;color:var(--muted,#9ab0c8);margin-bottom:10px;';
+
+      const contactsLabel = document.createElement('div');
+      contactsLabel.textContent = 'Recipients';
+      contactsLabel.style.cssText = 'font-size:.68rem;color:var(--muted,#9ab0c8);margin-bottom:6px;';
+
+      const contactsWrapEl = document.createElement('div');
+      contactsWrapEl.style.cssText = 'max-height:180px;overflow:auto;border:1px solid var(--card-border,#2a3446);border-radius:10px;background:var(--surface-1,#111c2e);padding:6px;display:flex;flex-direction:column;gap:6px;';
+
+      const selected = new Set();
+      if (selectedNumber) selected.add(String(selectedNumber).trim());
+
+      if (!visibleContacts.length) {
+        const empty = document.createElement('div');
+        empty.textContent = 'No contacts available. You can still enter a manual number below.';
+        empty.style.cssText = 'font-size:.68rem;color:var(--muted,#9ab0c8);padding:6px;';
+        contactsWrapEl.appendChild(empty);
+      } else {
+        visibleContacts.forEach((item) => {
+          const number = String(item.number || '').trim();
+          const row = document.createElement('label');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--card-border,#2a3446);border-radius:8px;cursor:pointer;';
+
+          const check = document.createElement('input');
+          check.type = 'checkbox';
+          check.checked = selected.has(number);
+          check.addEventListener('change', () => {
+            if (check.checked) selected.add(number);
+            else selected.delete(number);
+            updateCounter();
+          });
+
+          const label = document.createElement('div');
+          label.style.cssText = 'min-width:0;';
+          label.innerHTML = `
+            <div style="font-size:.75rem;font-weight:600;color:var(--text)">${escapeHtml(getDisplayName(number, item.name || number))}</div>
+            <div style="font-size:.64rem;color:var(--muted)">${escapeHtml(number)}</div>
+          `;
+
+          row.appendChild(check);
+          row.appendChild(label);
+          contactsWrapEl.appendChild(row);
+        });
+      }
+
+      const extraLabel = document.createElement('div');
+      extraLabel.textContent = 'Manual number (optional)';
+      extraLabel.style.cssText = 'font-size:.68rem;color:var(--muted,#9ab0c8);margin-top:10px;margin-bottom:6px;';
+
+      const extraInput = document.createElement('input');
+      extraInput.type = 'text';
+      extraInput.inputMode = 'numeric';
+      extraInput.maxLength = 11;
+      extraInput.placeholder = 'Enter 11-digit number';
+      extraInput.style.cssText = 'width:100%;height:36px;border-radius:10px;border:1px solid var(--card-border,#2a3446);background:var(--surface-1,#111c2e);color:var(--text,#e7edf5);padding:0 10px;outline:none;';
+
+      const messageLabel = document.createElement('div');
+      messageLabel.textContent = 'Message';
+      messageLabel.style.cssText = 'font-size:.68rem;color:var(--muted,#9ab0c8);margin-top:10px;margin-bottom:6px;';
+
+      const messageInput = document.createElement('textarea');
+      messageInput.placeholder = 'Type your message...';
+      messageInput.style.cssText = 'width:100%;min-height:88px;resize:vertical;border-radius:10px;border:1px solid var(--card-border,#2a3446);background:var(--surface-1,#111c2e);color:var(--text,#e7edf5);padding:8px 10px;outline:none;font:inherit;';
+
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:.66rem;color:var(--muted,#9ab0c8);margin-top:8px;';
+
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;margin-top:12px;';
+
+      const mkBtn = (label) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.style.cssText = 'height:32px;padding:0 10px;border-radius:8px;border:1px solid var(--card-border,#2a3446);background:var(--surface-1,#111c2e);color:var(--text,#e7edf5);cursor:pointer;';
+        return btn;
+      };
+
+      const btnCancel = mkBtn('Cancel');
+      const btnSend = mkBtn('Send');
+      btnSend.style.borderColor = 'var(--primary,#00c8ff)';
+
+      function collectRecipients() {
+        const recipients = Array.from(selected);
+        const extra = normalizeExtraNumber(extraInput.value);
+        if (extra) recipients.push(extra);
+        return Array.from(new Set(recipients.filter(Boolean)));
+      }
+
+      function updateCounter() {
+        const recipients = collectRecipients();
+        hint.textContent = recipients.length
+          ? `Recipients selected: ${recipients.length}`
+          : 'Select at least one recipient.';
+      }
+
+      function close(result) {
+        overlay.remove();
+        resolve(result);
+      }
+
+      btnCancel.addEventListener('click', () => close(false));
+
+      btnSend.addEventListener('click', async () => {
+        const recipients = collectRecipients();
+        const message = String(messageInput.value || '').trim();
+        if (!recipients.length) {
+          hint.textContent = 'Select at least one recipient.';
+          hint.style.color = 'var(--warning,#f6ad55)';
+          return;
+        }
+        if (!message) {
+          hint.textContent = 'Message cannot be empty.';
+          hint.style.color = 'var(--warning,#f6ad55)';
+          messageInput.focus();
+          return;
+        }
+
+        try {
+          btnSend.disabled = true;
+          btnCancel.disabled = true;
+          hint.textContent = 'Sending...';
+          hint.style.color = 'var(--muted,#9ab0c8)';
+
+          const localIds = addLocalOutgoingMessages(recipients, message);
+          renderMessages(lastMessagesData);
+
+          await api.sendSms(recipients, message);
+          updateLocalOutgoingStatus(localIds, 'sent');
+          renderMessages(lastMessagesData);
+
+          recipients.forEach((recipient) => {
+            const clean = upsertManualContact(recipient);
+            if (clean) selectedNumber = clean;
+          });
+          contacts = combineContacts(contacts);
+          renderContacts();
+          await refreshFromPi();
+          close(true);
+        } catch (err) {
+          const reason = err && err.message ? err.message : 'Send failed';
+          hint.textContent = `Failed to send: ${reason}`;
+          hint.style.color = 'var(--danger,#ff5252)';
+          btnSend.disabled = false;
+          btnCancel.disabled = false;
+        }
+      });
+
+      overlay.addEventListener('click', (evt) => {
+        if (evt.target === overlay) close(false);
+      });
+
+      extraInput.addEventListener('input', () => {
+        const clean = normalizeExtraNumber(extraInput.value);
+        if (extraInput.value !== clean) extraInput.value = clean;
+        updateCounter();
+      });
+
+      messageInput.addEventListener('keydown', (evt) => {
+        if ((evt.ctrlKey || evt.metaKey) && evt.key === 'Enter') {
+          evt.preventDefault();
+          btnSend.click();
+        }
+      });
+
+      actions.appendChild(btnCancel);
+      actions.appendChild(btnSend);
+
+      card.appendChild(title);
+      card.appendChild(subtitle);
+      card.appendChild(contactsLabel);
+      card.appendChild(contactsWrapEl);
+      card.appendChild(extraLabel);
+      card.appendChild(extraInput);
+      card.appendChild(messageLabel);
+      card.appendChild(messageInput);
+      card.appendChild(hint);
+      card.appendChild(actions);
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      updateCounter();
+      messageInput.focus();
+    });
+  }
+
   function updateExtraNumberUi() {
     if (!addNumberBtn) return;
     const clean = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
@@ -620,10 +1471,13 @@
     const selected = upsertManualContact(clean);
     contacts = combineContacts(contacts);
     renderContacts();
-    if (selected) setSelectedNumber(selected);
+    if (selected) {
+      if (composeMultiMode) selectedRecipients.add(selected);
+      else setSelectedNumber(selected);
+    }
 
-    if (extraNumberRow) extraNumberRow.setAttribute('hidden', '');
-    if (addNumberBtn) {
+    if (!composeMultiMode && extraNumberRow) extraNumberRow.setAttribute('hidden', '');
+    if (addNumberBtn && !composeMultiMode) {
       addNumberBtn.classList.remove('active');
       addNumberBtn.classList.remove('added');
     }
@@ -632,12 +1486,14 @@
       extraNumberHint.textContent = 'Numbers only, up to 11 digits.';
       extraNumberHint.className = 'sms-extra-hint';
     }
+    if (composeMultiMode) updateComposeThreadUi();
     if (composeInput) composeInput.focus();
   }
 
   function getRecipientsForSend() {
-    const recipients = [];
-    if (selectedNumber) recipients.push(String(selectedNumber).trim());
+    const recipients = composeMultiMode
+      ? Array.from(selectedRecipients)
+      : (selectedNumber ? [String(selectedNumber).trim()] : []);
     const extra = normalizeExtraNumber(extraNumberInput ? extraNumberInput.value : '');
     if (extra) recipients.push(extra);
     return Array.from(new Set(recipients.filter(Boolean)));
@@ -1302,7 +2158,7 @@
         lastBase = base;
         syncCameraMedia();
       }
-      setConnectionState(true, `RasPi: Connected (${base})`);
+      setConnectionState(true, 'RasPi: Connected', base);
 
       const [gps, track, contactData, messagesData, statusData] = await Promise.all([
         api.getGpsLatest(),
@@ -1324,7 +2180,7 @@
       updateSmsStats(lastMessagesData);
     } catch (err) {
       const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
-      setConnectionState(false, `RasPi: Offline (${reason})`);
+      setConnectionState(false, 'RasPi: Disconnected', reason);
       setGpsState(false, 'GPS: Disconnected');
       lastStatusData = null;
       setCameraConnectionState(`Camera offline: ${reason}`);
@@ -1365,6 +2221,10 @@
       updateLocalOutgoingStatus(localIds, 'sent');
       renderMessages(lastMessagesData);
 
+      if (composeMultiMode) {
+        exitMultiComposeMode();
+      }
+
       await refreshFromPi();
     } catch (err) {
       const localIds = [];
@@ -1404,6 +2264,13 @@
       return;
     }
 
+    if (composeMultiMode && !clean) {
+      extraNumberRow.setAttribute('hidden', '');
+      addNumberBtn.classList.remove('active');
+      addNumberBtn.classList.remove('added');
+      return;
+    }
+
     extraNumberRow.setAttribute('hidden', '');
     addNumberBtn.classList.remove('active');
     addNumberBtn.classList.remove('added');
@@ -1429,6 +2296,19 @@
 
   if (addNumberBtn) {
     addNumberBtn.addEventListener('click', toggleExtraNumberInput);
+  }
+
+  if (newMessageBtn) {
+    newMessageBtn.addEventListener('click', () => {
+      void openNewMessageModal();
+    });
+  }
+
+  if (openArchiveBtn) {
+    openArchiveBtn.addEventListener('click', () => {
+      if (composeMultiMode) exitMultiComposeMode();
+      toggleArchiveView();
+    });
   }
 
   if (cameraModeLiveBtn) {
@@ -1541,10 +2421,51 @@
 
   manualContacts = loadManualContacts();
   contactAliases = loadContactAliases();
+  archivedContacts = loadArchivedContacts();
+  updateArchiveButtonUi();
+  updateNewMessageButtonUi();
   cameraPanelActive = !!document.getElementById('panel-camera')?.classList.contains('active');
   setCameraMode('live');
   renderCameraPanel();
   refreshCameras();
+
+  // Backend mode toggle
+  const backendModeToggle = document.getElementById('backendModeToggle');
+  const backendModeLabel = document.getElementById('backendModeLabel');
+
+  function updateBackendModeUI() {
+    const isBackendMode = api.getUseBackend();
+    if (backendModeToggle) backendModeToggle.checked = isBackendMode;
+    if (backendModeLabel) {
+      backendModeLabel.textContent = isBackendMode ? 'Backend WS' : 'Pi Direct';
+      backendModeLabel.style.color = isBackendMode ? 'var(--primary)' : 'var(--muted)';
+    }
+  }
+
+  function setBackendMode(enabled) {
+    api.setUseBackend(enabled);
+    updateBackendModeUI();
+    console.log(`[API] Mode switched to: ${enabled ? 'Backend WebSocket' : 'Pi Direct'}`);
+    // Trigger a refresh to use the new mode
+    refreshFromPi();
+  }
+
+  if (backendModeToggle) {
+    backendModeToggle.addEventListener('change', () => {
+      setBackendMode(backendModeToggle.checked);
+    });
+  }
+
+  if (backendModeLabel) {
+    backendModeLabel.addEventListener('click', () => {
+      if (backendModeToggle) {
+        backendModeToggle.checked = !backendModeToggle.checked;
+        setBackendMode(backendModeToggle.checked);
+      }
+    });
+  }
+
+  updateBackendModeUI();
 
   refreshFromPi();
   setInterval(refreshFromPi, 10000);

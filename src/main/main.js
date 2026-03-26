@@ -1,7 +1,18 @@
-const { app, BrowserWindow, session } = require('electron');
+// Load environment variables from .env file
+require('dotenv').config();
+
+const { app, BrowserWindow, session, nativeImage } = require('electron');
 const os = require('os');
 const path = require('path');
-require('./ipc-handlers');
+const { setupEventForwarding } = require('./ipc-handlers');
+const { adminClient } = require('../services/websocket');
+
+let registerTrackingIPC = null;
+try {
+  ({ registerTrackingIPC } = require('./tracking-ipc'));
+} catch {
+  registerTrackingIPC = () => {};
+}
 
 // Some remote/virtualized Windows setups cannot start Chromium GPU process.
 app.disableHardwareAcceleration();
@@ -19,7 +30,14 @@ app.setPath('userData', localAppDataDir);
 app.setPath('sessionData', localCacheDir);
 app.commandLine.appendSwitch('disk-cache-dir', localCacheDir);
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.piguard.desktop');
+}
+
 function createWindow() {
+  const appIconPath = path.join(app.getAppPath(), 'piguard-logo.png');
+  const appIcon = nativeImage.createFromPath(appIconPath);
+
   // Allow OSM tile images and Pi API calls from the local HTML file.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -39,6 +57,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: appIcon.isEmpty() ? appIconPath : appIcon,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -61,6 +80,8 @@ function createWindow() {
 
   win.webContents.on('did-finish-load', () => {
     console.log('renderer loaded:', win.webContents.getURL());
+    // Set up backend event forwarding to renderer
+    setupEventForwarding(win);
   });
 
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -68,6 +89,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+  registerTrackingIPC(adminClient);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

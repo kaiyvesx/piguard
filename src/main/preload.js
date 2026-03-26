@@ -1,4 +1,9 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
+
+// =====================================================
+// LEGACY Pi Bridge (Direct HTTP to Raspberry Pi)
+// Kept for backward compatibility with existing code
+// =====================================================
 
 const BASE_CANDIDATES = [
   'http://raspi44:8000',
@@ -98,6 +103,7 @@ async function request(path, method = 'GET', body = undefined, timeoutMs = 10000
   return fetchJson(`${base}${path}`, options, timeoutMs);
 }
 
+// Legacy Pi Bridge API (direct HTTP)
 contextBridge.exposeInMainWorld('piBridge', {
   detectBase,
   getStatus: () => request('/status', 'GET', undefined, 8000),
@@ -111,4 +117,134 @@ contextBridge.exposeInMainWorld('piBridge', {
   getContacts:  () => request('/contacts',   'GET', undefined, 8000),
   getMessages:  () => request('/messages',   'GET', undefined, 8000),
   sendSms: (numbers, message) => request('/send_sms', 'POST', { to: numbers, message }, 20000),
+});
+
+// =====================================================
+// NEW Backend Bridge (WebSocket via Central Server)
+// Uses IPC to communicate with main process
+// =====================================================
+
+// Event listeners storage
+const eventListeners = new Map();
+
+// Set up event listener from main process
+ipcRenderer.on('backend:event', (_event, data) => {
+  const listeners = eventListeners.get(data.type) || [];
+  listeners.forEach(callback => {
+    try {
+      callback(data);
+    } catch (err) {
+      console.error('[BackendBridge] Event handler error:', err);
+    }
+  });
+
+  // Also notify 'all' listeners
+  const allListeners = eventListeners.get('all') || [];
+  allListeners.forEach(callback => {
+    try {
+      callback(data);
+    } catch (err) {
+      console.error('[BackendBridge] Event handler error:', err);
+    }
+  });
+});
+
+// Helper to unwrap IPC response
+async function unwrapResponse(promise) {
+  const result = await promise;
+  if (result && result.success === false) {
+    throw new Error(result.error || 'Unknown error');
+  }
+  return result?.data ?? result;
+}
+
+// Backend Bridge API (WebSocket via central server)
+contextBridge.exposeInMainWorld('backendBridge', {
+  // =====================
+  // Connection Management
+  // =====================
+
+  connect: () => ipcRenderer.invoke('backend:connect'),
+  disconnect: () => ipcRenderer.invoke('backend:disconnect'),
+  getStatus: () => ipcRenderer.invoke('backend:status'),
+  isConnected: () => ipcRenderer.invoke('backend:isConnected'),
+
+  // =====================
+  // GPS Commands
+  // =====================
+
+  getGps: () => unwrapResponse(ipcRenderer.invoke('backend:getGps')),
+  getGpsTrack: (options) => unwrapResponse(ipcRenderer.invoke('backend:getGpsTrack', options)),
+
+  // =====================
+  // Camera Commands
+  // =====================
+
+  takePhoto: (options) => unwrapResponse(ipcRenderer.invoke('backend:takePhoto', options)),
+  getCameras: () => unwrapResponse(ipcRenderer.invoke('backend:getCameras')),
+  startRecording: (options) => unwrapResponse(ipcRenderer.invoke('backend:startRecording', options)),
+  stopRecording: () => unwrapResponse(ipcRenderer.invoke('backend:stopRecording')),
+
+  // =====================
+  // SMS Commands
+  // =====================
+
+  getMessages: (options) => unwrapResponse(ipcRenderer.invoke('backend:getMessages', options)),
+  getContacts: () => unwrapResponse(ipcRenderer.invoke('backend:getContacts')),
+  sendSms: (to, message) => unwrapResponse(ipcRenderer.invoke('backend:sendSms', to, message)),
+
+  // =====================
+  // Call Commands
+  // =====================
+
+  makeCall: (number) => unwrapResponse(ipcRenderer.invoke('backend:makeCall', number)),
+  getCallLog: (options) => unwrapResponse(ipcRenderer.invoke('backend:getCallLog', options)),
+
+  // =====================
+  // Device Info Commands
+  // =====================
+
+  getDeviceInfo: () => unwrapResponse(ipcRenderer.invoke('backend:getDeviceInfo')),
+  getBatteryStatus: () => unwrapResponse(ipcRenderer.invoke('backend:getBatteryStatus')),
+
+  // =====================
+  // Generic Command
+  // =====================
+
+  sendCommand: (action, payload, deviceId) =>
+    unwrapResponse(ipcRenderer.invoke('backend:sendCommand', action, payload, deviceId)),
+
+  // =====================
+  // Event Handling
+  // =====================
+
+  on: (eventType, callback) => {
+    if (!eventListeners.has(eventType)) {
+      eventListeners.set(eventType, []);
+    }
+    eventListeners.get(eventType).push(callback);
+  },
+
+  off: (eventType, callback) => {
+    const listeners = eventListeners.get(eventType);
+    if (listeners) {
+      const index = listeners.indexOf(callback);
+      if (index !== -1) {
+        listeners.splice(index, 1);
+      }
+    }
+  },
+
+  removeAllListeners: (eventType) => {
+    if (eventType) {
+      eventListeners.delete(eventType);
+    } else {
+      eventListeners.clear();
+    }
+  },
+});
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  on: (channel, cb) => ipcRenderer.on(channel, cb),
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
 });

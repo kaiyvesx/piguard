@@ -10,4 +10,15 @@
       </div>
     </div>
   </div>
+  <div style="padding:0 12px 12px">
+    <div style="background:var(--surface-1);border:1px solid var(--card-border);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px">
+      <button class="btn-add-number" id="smsNewMessageBtn" type="button" title="Start new message" style="width:100%">New message</button>
+      <button class="btn-add-number" id="smsOpenArchiveBtn" type="button" title="View archived messages" style="width:100%">Archived</button>
+      <button class="btn-add-number" id="smsAddNumberBtn" type="button" title="Add number" style="width:100%">Add number</button>
+      <div class="sms-extra-toolbar" id="smsExtraRow" hidden style="padding:0;border-bottom:none">
+        <input class="compose-input compose-extra-input" id="smsExtraNumberInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="11" placeholder="Enter 11-digit number" />
+        <div class="sms-extra-hint" id="smsExtraHint">Numbers only, up to 11 digits.</div>
+      </div>
+    </div>
+  </div>
 </div>
