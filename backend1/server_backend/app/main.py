@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -19,9 +19,14 @@ hub = RealtimeHub(audit)
 
 app = FastAPI(title="Remote Device Realtime Backend", version="1.0.0")
 
+raw_origins = os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://localhost:5173")
+cors_allow_origins: List[str] = [o.strip() for o in raw_origins.split(",") if o.strip()]
+if not cors_allow_origins:
+    cors_allow_origins = ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -157,12 +162,10 @@ def _normalize_device_response(device_id: str, msg: Dict[str, Any]) -> Dict[str,
     if data is None and msg.get("result") is not None:
         data = msg.get("result")
 
-    if explicit_status == "error" or (isinstance(err, dict) and err):
+    if explicit_status == "error" or (explicit_status != "success" and bool(err)):
         status_val = "error"
     elif explicit_status == "success":
         status_val = "success"
-    elif isinstance(err, dict) and err:
-        status_val = "error"
     else:
         status_val = "success"
 

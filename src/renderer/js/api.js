@@ -10,7 +10,7 @@
 
   // Backend connection state
   let backendConnected = false;
-  let useBackend = false; // Set to true to prefer WebSocket backend over direct Pi HTTP
+  let useBackend = true; // Prefer backend WebSocket so ADB auto-target can be used by default
 
   // Initialize backend connection if available
   if (backendApi) {
@@ -355,7 +355,9 @@
   function isMobileTrackingDevice(deviceId) {
     const id = String(deviceId || '').trim().toLowerCase();
     if (!id) return false;
-    return id === '13e1b5b146eba495' || id.includes('mobile');
+    // Accept explicit mobile ids and common ADB serial formats (e.g. FY2418910A51).
+    const looksLikeAdbSerial = /^[a-z0-9_-]{8,}$/i.test(id);
+    return id === '13e1b5b146eba495' || id.includes('mobile') || looksLikeAdbSerial;
   }
 
   function getTrackingMap() {

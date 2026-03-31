@@ -2,6 +2,7 @@
 
 const { ipcMain } = require('electron');
 const { backendApi } = require('../services/api');
+const { listAdbDevices, getPreferredDeviceId } = require('../services/adb');
 
 // Track initialization state
 let isInitialized = false;
@@ -185,6 +186,27 @@ function initializeIpcHandlers() {
     try {
       const data = await backendApi.sendCommand(action, payload, deviceId);
       return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // =====================
+  // USB / ADB Device Detection
+  // =====================
+  ipcMain.handle('adb:listDevices', async () => {
+    try {
+      const devices = await listAdbDevices();
+      return { success: true, data: devices };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('adb:getPreferredDevice', async () => {
+    try {
+      const deviceId = await getPreferredDeviceId();
+      return { success: true, data: { deviceId } };
     } catch (err) {
       return { success: false, error: err.message };
     }

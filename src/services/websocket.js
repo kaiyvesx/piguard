@@ -3,6 +3,8 @@
 const WebSocket = require('ws');
 const EventEmitter = require('events');
 const config = require('./backend.config');
+const { getPreferredDeviceId, shouldAutoDetectTarget } = require('./adb');
+const { executeAdbFallback } = require('./adb-fallback');
 
 let trackingHandler;
 try {
@@ -48,6 +50,10 @@ class AdminWebSocketClient extends EventEmitter {
     this._reconnectAttempts = 0;
     this._maxReconnectAttempts = 5;
     this._baseReconnectDelay = config.reconnectDelay;
+    this._adbTrackingTimer = null;
+    this._adbTrackingActiveDeviceId = null;
+    this._adbTrackingEmittedRequest = false;
+    this._adbTrackingIntervalMs = Number(process.env.ADB_TRACK_INTERVAL_MS || 5000);
   }
 
   /**
@@ -155,6 +161,7 @@ class AdminWebSocketClient extends EventEmitter {
       this._authenticated = true;
       this._reconnectAttempts = 0; // Reset on successful connection
       this._startPing();
+      this._startAdbTracking();
       this.emit('connected');
       if (connectResolve) connectResolve();
       return;
@@ -177,9 +184,8 @@ class AdminWebSocketClient extends EventEmitter {
       console.log('[AdminWS] Command queued (device offline):', msg.request_id);
       const pending = this._pendingRequests.get(msg.request_id);
       if (pending) {
-        clearTimeout(pending.timeout);
-        this._pendingRequests.delete(msg.request_id);
-        pending.resolve({ queued: true, ...msg });
+        // Try a local ADB fallback so USB-only mode can still return useful data.
+        this._tryResolveWithAdbFallback(msg, pending);
       }
       this.emit('command_queued', msg);
       return;
@@ -232,6 +238,7 @@ class AdminWebSocketClient extends EventEmitter {
 
   _cleanup() {
     this._stopPing();
+    this._stopAdbTracking();
 
     // Reject all pending requests
     for (const [requestId, pending] of this._pendingRequests) {
@@ -270,6 +277,100 @@ class AdminWebSocketClient extends EventEmitter {
     }, delay);
   }
 
+  _startAdbTracking() {
+    this._stopAdbTracking();
+    const intervalMs = Number.isFinite(this._adbTrackingIntervalMs) && this._adbTrackingIntervalMs > 0
+      ? this._adbTrackingIntervalMs
+      : 5000;
+
+    // Poll ADB location for USB-only mode (no mobile ws client).
+    this._adbTrackingTimer = setInterval(() => {
+      this._adbTrackingTick().catch(() => {});
+    }, intervalMs);
+    this._adbTrackingTick().catch(() => {});
+  }
+
+  _stopAdbTracking() {
+    if (this._adbTrackingTimer) {
+      clearInterval(this._adbTrackingTimer);
+      this._adbTrackingTimer = null;
+    }
+    if (this._adbTrackingActiveDeviceId) {
+      this.emit('tracking:session_end', {
+        device_id: this._adbTrackingActiveDeviceId,
+        session: { ended_by: 'adb-tracking-stop' },
+      });
+    }
+    this._adbTrackingActiveDeviceId = null;
+    this._adbTrackingEmittedRequest = false;
+  }
+
+  async _adbTrackingTick() {
+    if (!this._authenticated) return;
+    const deviceId = await getPreferredDeviceId();
+    if (!deviceId) {
+      if (this._adbTrackingActiveDeviceId) {
+        this.emit('tracking:session_end', {
+          device_id: this._adbTrackingActiveDeviceId,
+          session: { ended_by: 'adb-device-disconnected' },
+        });
+      }
+      this._adbTrackingActiveDeviceId = null;
+      this._adbTrackingEmittedRequest = false;
+      return;
+    }
+
+    this._adbTrackingActiveDeviceId = deviceId;
+    if (!this._adbTrackingEmittedRequest) {
+      this._adbTrackingEmittedRequest = true;
+      this.emit('tracking:request', {
+        device_id: deviceId,
+        requested_at: new Date().toISOString(),
+        source: 'adb-live-tracking',
+      });
+    }
+
+    const data = await executeAdbFallback('get_gps', {}, deviceId);
+    if (!data || !Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
+    this.emit('tracking:location', {
+      device_id: deviceId,
+      latitude: data.lat,
+      longitude: data.lng,
+      timestamp: new Date().toISOString(),
+      ts: Date.now(),
+      source: 'adb-live-tracking',
+    });
+  }
+
+  async _tryResolveWithAdbFallback(msg, pending) {
+    const requestId = msg.request_id;
+    try {
+      const data = await executeAdbFallback(msg.action, {}, msg.device_id);
+      clearTimeout(pending.timeout);
+      this._pendingRequests.delete(requestId);
+      if (data == null) {
+        pending.resolve({ queued: true, ...msg });
+        return;
+      }
+      const response = {
+        type: 'command_response',
+        request_id: requestId,
+        device_id: msg.device_id,
+        action: msg.action,
+        status: 'success',
+        data,
+        via: 'adb-fallback',
+      };
+      console.log('[AdminWS] Resolved via ADB fallback:', msg.action, requestId);
+      pending.resolve(response);
+      this.emit('command_response', response);
+    } catch (err) {
+      clearTimeout(pending.timeout);
+      this._pendingRequests.delete(requestId);
+      pending.reject(new Error(`ADB fallback failed: ${err.message}`));
+    }
+  }
+
   /**
    * Send a command to a device via the backend server.
    * @param {string} action - Command action (e.g., 'get_gps', 'take_photo')
@@ -284,7 +385,14 @@ class AdminWebSocketClient extends EventEmitter {
     }
 
     const reqId = requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const devId = deviceId || config.targetDeviceId;
+    let devId = deviceId || config.targetDeviceId;
+    if (!deviceId && shouldAutoDetectTarget()) {
+      const adbDeviceId = await getPreferredDeviceId();
+      if (adbDeviceId) {
+        devId = adbDeviceId;
+        console.log('[AdminWS] Auto-selected ADB device:', devId);
+      }
+    }
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {

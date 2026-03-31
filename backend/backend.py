@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
+import os
 import serial
 import time
 import threading
@@ -16,6 +17,12 @@ from typing import List, Dict, Optional
 from datetime import datetime, timezone, timedelta
 
 from openpyxl import Workbook
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except Exception:
+    psycopg2 = None
+    RealDictCursor = None
 
 # ===================== CONFIG =====================
 UART_PORT = "/dev/serial0"
@@ -26,6 +33,22 @@ DATA_DIR = Path.home() / "sim7000_gui_backend"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = DATA_DIR / "app.db"
+DB_ENGINE = (os.getenv("DB_ENGINE", "postgres") or "postgres").strip().lower()
+if DB_ENGINE not in ("postgres", "sqlite"):
+    DB_ENGINE = "postgres"
+
+POSTGRES_DSN = (os.getenv("DATABASE_URL") or "").strip()
+if not POSTGRES_DSN:
+    pg_host = (os.getenv("PGHOST") or "127.0.0.1").strip()
+    pg_port = (os.getenv("PGPORT") or "5432").strip()
+    pg_db = (os.getenv("PGDATABASE") or "piguard_db").strip()
+    pg_user = (os.getenv("PGUSER") or "piguard_user").strip()
+    pg_password = (os.getenv("PGPASSWORD") or "").strip()
+    if pg_password:
+        POSTGRES_DSN = (
+            f"host={pg_host} port={pg_port} dbname={pg_db} "
+            f"user={pg_user} password={pg_password}"
+        )
 
 EXPORT_DIR = DATA_DIR / "exports"
 EXPORT_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,6 +72,8 @@ CAMERA_PREFERRED_HEIGHT = 480
 CAMERA_PREFERRED_FPS = 15
 CAMERA_STREAM_JPEG_QUALITY = 80
 # =================================================
+QMI_MODEM = "/dev/cdc-wdm0"
+WWAN_IFACE = "wwan0"
 
 PH_TZ = timezone(timedelta(hours=8))
 
@@ -98,6 +123,20 @@ ser = None
 serial_lock = threading.Lock()
 gps_power_lock = threading.Lock()
 camera_lock = threading.Lock()
+camera_state_lock = threading.Lock()
+camera_state: Dict[int, dict] = {}
+
+
+def _camera_state_get(idx: int) -> dict:
+    with camera_state_lock:
+        return dict(camera_state.get(idx, {}))
+
+
+def _camera_state_update(idx: int, **kwargs):
+    with camera_state_lock:
+        st = camera_state.setdefault(idx, {})
+        st.update(kwargs)
+
 
 
 def ensure_serial():
@@ -250,6 +289,181 @@ def get_throttled_status() -> dict:
 def delayed_poweroff():
     time.sleep(2)
     subprocess.run(["sudo", "poweroff"])
+
+
+def run_cmd(cmd: List[str], timeout: int = 8) -> dict:
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return {
+            "ok": res.returncode == 0,
+            "stdout": (res.stdout or "").strip(),
+            "stderr": (res.stderr or "").strip(),
+            "returncode": res.returncode,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": str(e),
+            "returncode": -1,
+        }
+
+
+def parse_qmi_settings(text: str) -> dict:
+    out = {
+        "ip_family": None,
+        "ipv4": None,
+        "subnet_mask": None,
+        "gateway": None,
+        "dns1": None,
+        "dns2": None,
+        "mtu": None,
+    }
+    if not text:
+        return out
+
+    patterns = {
+        "ip_family": r"IP Family:\s*([A-Za-z0-9]+)",
+        "ipv4": r"IPv4 address:\s*([0-9.]+)",
+        "subnet_mask": r"IPv4 subnet mask:\s*([0-9.]+)",
+        "gateway": r"IPv4 gateway address:\s*([0-9.]+)",
+        "dns1": r"IPv4 primary DNS:\s*([0-9.]+)",
+        "dns2": r"IPv4 secondary DNS:\s*([0-9.]+)",
+        "mtu": r"MTU:\s*([0-9]+)",
+    }
+    for k, pat in patterns.items():
+        m = re.search(pat, text)
+        if m:
+            out[k] = int(m.group(1)) if k == "mtu" else m.group(1)
+    return out
+
+
+def parse_serving_system(text: str) -> dict:
+    out = {
+        "registration_state": None,
+        "ps": None,
+        "selected_network": None,
+        "radio_interface": None,
+        "data_capability": None,
+        "operator": None,
+    }
+    if not text:
+        return out
+
+    pairs = {
+        "registration_state": r"Registration state:\s*'([^']+)'",
+        "ps": r"PS:\s*'([^']+)'",
+        "selected_network": r"Selected network:\s*'([^']+)'",
+        "operator": r"Description:\s*'([^']+)'",
+    }
+    for k, pat in pairs.items():
+        m = re.search(pat, text)
+        if m:
+            out[k] = m.group(1)
+
+    m = re.search(r"Radio interfaces:\s*'.*?'\s*\n\s*\[\d+\]:\s*'([^']+)'", text)
+    if m:
+        out["radio_interface"] = m.group(1)
+    m = re.search(r"Data service capabilities:\s*'.*?'\s*\n\s*\[\d+\]:\s*'([^']+)'", text)
+    if m:
+        out["data_capability"] = m.group(1)
+    return out
+
+
+def parse_signal_info(text: str) -> dict:
+    out = {"rssi_dbm": None, "raw": text or ""}
+    if not text:
+        return out
+    m = re.search(r"RSSI:\s*'(-?\d+)\s*dBm'", text)
+    if m:
+        out["rssi_dbm"] = int(m.group(1))
+    return out
+
+
+def parse_ip_addr_show(text: str) -> dict:
+    out = {"is_up": False, "ipv4_cidr": None, "link_state_text": text or ""}
+    if not text:
+        return out
+    first_line = text.splitlines()[0] if text.splitlines() else ""
+    out["is_up"] = ("UP" in first_line or "LOWER_UP" in first_line)
+    m = re.search(r"\binet\s+([0-9.]+/\d+)", text)
+    if m:
+        out["ipv4_cidr"] = m.group(1)
+    return out
+
+
+def get_mobile_data_status() -> dict:
+    result = {
+        "modem_path": QMI_MODEM,
+        "iface": WWAN_IFACE,
+        "modem_present": Path(QMI_MODEM).exists(),
+        "iface_present": Path(f"/sys/class/net/{WWAN_IFACE}").exists(),
+        "connected": False,
+        "session_status": "unknown",
+        "wwan0_up": False,
+        "wwan0_ipv4": None,
+        "ip_family": None,
+        "ipv4": None,
+        "subnet_mask": None,
+        "gateway": None,
+        "dns1": None,
+        "dns2": None,
+        "mtu": None,
+        "registration_state": None,
+        "ps": None,
+        "selected_network": None,
+        "radio_interface": None,
+        "data_capability": None,
+        "operator": None,
+        "rssi_dbm": None,
+        "notes": [],
+        "raw": {},
+    }
+
+    if not result["modem_present"]:
+        result["notes"].append("QMI modem not found")
+        return result
+
+    status_cmd = run_cmd(["qmicli", "-d", QMI_MODEM, "--wds-get-packet-service-status"], timeout=8)
+    result["raw"]["packet_service_status"] = status_cmd["stdout"] or status_cmd["stderr"]
+    if status_cmd["ok"]:
+        m = re.search(r"Connection status:\s*'([^']+)'", status_cmd["stdout"])
+        if m:
+            result["session_status"] = m.group(1)
+            result["connected"] = (m.group(1).lower() == "connected")
+    else:
+        result["notes"].append("Failed to read packet service status")
+
+    ip_show = run_cmd(["ip", "addr", "show", WWAN_IFACE], timeout=4)
+    result["raw"]["ip_addr_show"] = ip_show["stdout"] or ip_show["stderr"]
+    if ip_show["ok"]:
+        parsed_if = parse_ip_addr_show(ip_show["stdout"])
+        result["wwan0_up"] = parsed_if["is_up"]
+        result["wwan0_ipv4"] = parsed_if["ipv4_cidr"]
+
+    serving = run_cmd(["qmicli", "-d", QMI_MODEM, "--nas-get-serving-system"], timeout=8)
+    result["raw"]["serving_system"] = serving["stdout"] or serving["stderr"]
+    if serving["ok"]:
+        result.update(parse_serving_system(serving["stdout"]))
+
+    signal = run_cmd(["qmicli", "-d", QMI_MODEM, "--nas-get-signal-info"], timeout=8)
+    result["raw"]["signal_info"] = signal["stdout"] or signal["stderr"]
+    if signal["ok"]:
+        result["rssi_dbm"] = parse_signal_info(signal["stdout"])["rssi_dbm"]
+
+    if result["connected"]:
+        current = run_cmd(["qmicli", "-p", "-d", QMI_MODEM, "--wds-get-current-settings"], timeout=8)
+        result["raw"]["current_settings"] = current["stdout"] or current["stderr"]
+        if current["ok"]:
+            result.update(parse_qmi_settings(current["stdout"]))
+        else:
+            result["notes"].append("Connected, but current settings could not be read")
+
+    if result["connected"] and not result["wwan0_ipv4"]:
+        result["notes"].append("Packet session connected, but wwan0 has no IPv4 assigned")
+    if not result["connected"]:
+        result["notes"].append("Mobile data session is disconnected")
+    return result
 
 
 # ===================== GPS control =====================
@@ -481,32 +695,85 @@ def camera_index_from_path(dev_path: str) -> Optional[int]:
     return int(m.group(1))
 
 
+
+def camera_name_from_path(dev_path: str) -> str:
+    p = Path(dev_path)
+    if not p.name.startswith("video"):
+        return "-"
+    sys_name = Path("/sys/class/video4linux") / p.name / "name"
+    try:
+        return sys_name.read_text().strip() or "-"
+    except Exception:
+        return "-"
+
+
 def probe_camera(dev_path: str) -> dict:
     idx = camera_index_from_path(dev_path)
+    present = Path(dev_path).exists()
     result = {
         "device": dev_path,
         "index": idx,
+        "present": present,
+        "exists": present,
+        "name": camera_name_from_path(dev_path),
         "ok": False,
+        "busy": False,
+        "streaming": False,
+        "status": "UNKNOWN",
         "width": None,
         "height": None,
         "fps": None,
+        "last_frame_ts": None,
+        "last_error": None,
     }
 
     if idx is None:
+        result["status"] = "INVALID"
+        return result
+
+    st = _camera_state_get(idx)
+    if st:
+        result.update({
+            "streaming": bool(st.get("streaming", False)),
+            "last_frame_ts": st.get("last_frame_ts"),
+            "last_error": st.get("last_error"),
+            "width": st.get("width") or result["width"],
+            "height": st.get("height") or result["height"],
+            "fps": st.get("fps") or result["fps"],
+        })
+
+    if result["streaming"]:
+        result["ok"] = True
+        result["busy"] = True
+        result["status"] = "LIVE"
+        return result
+
+    if not present:
+        result["status"] = "MISSING"
         return result
 
     with camera_lock:
         cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
         try:
             if not cap.isOpened():
+                result["status"] = "DETECTED_NOT_OPENED"
                 return result
 
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_PREFERRED_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_PREFERRED_HEIGHT)
             cap.set(cv2.CAP_PROP_FPS, CAMERA_PREFERRED_FPS)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-            ok, frame = cap.read()
+            ok = False
+            frame = None
+            for _ in range(3):
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    break
+                time.sleep(0.03)
+
             if not ok or frame is None:
+                result["status"] = "OPEN_BUT_NO_FRAME"
                 return result
 
             h, w = frame.shape[:2]
@@ -514,10 +781,18 @@ def probe_camera(dev_path: str) -> dict:
 
             result.update({
                 "ok": True,
+                "status": "READY",
                 "width": int(w),
                 "height": int(h),
                 "fps": float(fps) if fps else None,
             })
+            _camera_state_update(
+                idx,
+                width=int(w),
+                height=int(h),
+                fps=float(fps) if fps else None,
+                last_error=None
+            )
             return result
         finally:
             cap.release()
@@ -526,16 +801,14 @@ def probe_camera(dev_path: str) -> dict:
 def list_cameras() -> List[dict]:
     cameras = []
     for dev in list_video_devices():
-        info = probe_camera(dev)
-        if info.get("ok"):
-            cameras.append(info)
+        cameras.append(probe_camera(dev))
     return cameras
-
 
 def capture_camera_jpeg(camera_index: int) -> bytes:
     with camera_lock:
         cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
         if not cap.isOpened():
+            _camera_state_update(camera_index, last_error=f"/dev/video{camera_index} not available")
             raise RuntimeError(f"Camera /dev/video{camera_index} not available")
 
         try:
@@ -553,10 +826,16 @@ def capture_camera_jpeg(camera_index: int) -> bytes:
                 time.sleep(0.03)
 
             if not ok or frame is None:
+                _camera_state_update(camera_index, last_error="No frame captured in snapshot")
                 raise RuntimeError(f"Camera /dev/video{camera_index} not available")
+
+            h, w = frame.shape[:2]
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            _camera_state_update(camera_index, width=int(w), height=int(h), fps=float(fps) if fps else None, last_error=None)
 
             ok2, buf = cv2.imencode(".jpg", frame)
             if not ok2:
+                _camera_state_update(camera_index, last_error="Failed to encode JPEG snapshot")
                 raise RuntimeError("Failed to encode JPEG")
 
             return buf.tobytes()
@@ -565,8 +844,10 @@ def capture_camera_jpeg(camera_index: int) -> bytes:
 
 
 def mjpeg_stream_generator(camera_index: int):
+    _camera_state_update(camera_index, streaming=True, status="LIVE", last_error=None)
     cap = cv2.VideoCapture(camera_index, cv2.CAP_V4L2)
     if not cap.isOpened():
+        _camera_state_update(camera_index, streaming=False, status="ERROR", last_error=f"Camera /dev/video{camera_index} not available")
         raise RuntimeError(f"Camera /dev/video{camera_index} not available")
 
     try:
@@ -580,10 +861,26 @@ def mjpeg_stream_generator(camera_index: int):
         while True:
             ok, frame = cap.read()
             if not ok or frame is None:
+                _camera_state_update(camera_index, last_error="Live stream frame read failed")
+                time.sleep(0.05)
                 continue
+
+            h, w = frame.shape[:2]
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            _camera_state_update(
+                camera_index,
+                streaming=True,
+                status="LIVE",
+                width=int(w),
+                height=int(h),
+                fps=float(fps) if fps else None,
+                last_frame_ts=now_dt_ph().strftime("%m/%d/%Y %I:%M:%S %p"),
+                last_error=None,
+            )
 
             ok2, buf = cv2.imencode(".jpg", frame, encode_param)
             if not ok2:
+                _camera_state_update(camera_index, last_error="JPEG encode failed during live stream")
                 continue
 
             jpg_bytes = buf.tobytes()
@@ -591,18 +888,59 @@ def mjpeg_stream_generator(camera_index: int):
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(jpg_bytes)).encode() + b"\r\n\r\n" +
-                jpg_bytes + b"\r\n"
+                b"Content-Length: " + str(len(jpg_bytes)).encode() + b"\r\n\r\n"
+                + jpg_bytes + b"\r\n"
             )
     finally:
         cap.release()
+        _camera_state_update(camera_index, streaming=False, status="STOPPED")
 
 
 # ===================== DB =====================
 db_lock = threading.Lock()
+_db_backend = None
+
+
+def _resolve_db_backend() -> str:
+    global _db_backend
+    if _db_backend:
+        return _db_backend
+
+    if DB_ENGINE == "postgres":
+        if psycopg2 is None:
+            print("DB backend: psycopg2 not installed, falling back to sqlite")
+            _db_backend = "sqlite"
+            return _db_backend
+        if not POSTGRES_DSN:
+            print("DB backend: postgres selected but DSN not configured, falling back to sqlite")
+            _db_backend = "sqlite"
+            return _db_backend
+        try:
+            test_conn = psycopg2.connect(POSTGRES_DSN, connect_timeout=4)
+            test_conn.close()
+            _db_backend = "postgres"
+            print("DB backend: postgres")
+            return _db_backend
+        except Exception as e:
+            print(f"DB backend: postgres unavailable ({e}), falling back to sqlite")
+            _db_backend = "sqlite"
+            return _db_backend
+
+    _db_backend = "sqlite"
+    print("DB backend: sqlite")
+    return _db_backend
+
+
+def _sql_params(sql: str, params: tuple) -> tuple[str, tuple]:
+    if _resolve_db_backend() == "postgres":
+        return sql.replace("?", "%s"), params
+    return sql, params
 
 
 def db_connect():
+    if _resolve_db_backend() == "postgres":
+        return psycopg2.connect(POSTGRES_DSN)
+
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=DELETE;")
@@ -611,20 +949,31 @@ def db_connect():
 
 
 def db_exec(sql: str, params: tuple = ()):
+    sql2, params2 = _sql_params(sql, params)
     with db_lock:
         conn = db_connect()
         try:
-            conn.execute(sql, params)
+            if _resolve_db_backend() == "postgres":
+                with conn.cursor() as cur:
+                    cur.execute(sql2, params2)
+            else:
+                conn.execute(sql2, params2)
             conn.commit()
         finally:
             conn.close()
 
 
 def db_query(sql: str, params: tuple = ()) -> List[dict]:
+    sql2, params2 = _sql_params(sql, params)
     with db_lock:
         conn = db_connect()
         try:
-            cur = conn.execute(sql, params)
+            if _resolve_db_backend() == "postgres":
+                with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                    cur.execute(sql2, params2)
+                    rows = cur.fetchall()
+                    return [dict(r) for r in rows]
+            cur = conn.execute(sql2, params2)
             rows = cur.fetchall()
             return [dict(r) for r in rows]
         finally:
@@ -637,8 +986,8 @@ def db_prune_keep_latest(table: str, keep: int):
     db_exec(
         f"""
         DELETE FROM {table}
-        WHERE rowid NOT IN (
-            SELECT rowid FROM {table}
+        WHERE id NOT IN (
+            SELECT id FROM {table}
             ORDER BY ts DESC
             LIMIT ?
         )
@@ -734,6 +1083,26 @@ def init_db():
         category TEXT NOT NULL,
         detail TEXT NOT NULL
     )""")
+
+
+def db_reset_storage():
+    if _resolve_db_backend() == "sqlite":
+        if DB_PATH.exists():
+            DB_PATH.unlink()
+        return
+
+    for table in [
+        "group_members",
+        "sms_inbox",
+        "sms_sent",
+        "gps_points",
+        "network_status",
+        "heartbeat",
+        "activity",
+        "contacts",
+        "groups",
+    ]:
+        db_exec(f"DROP TABLE IF EXISTS {table}")
 
 
 def log_activity(level: str, category: str, detail: str):
@@ -1106,10 +1475,336 @@ class SendSMSRequest(BaseModel):
 
 
 # ===================== API =====================
+
+
+def mask_to_prefix(mask: str) -> Optional[int]:
+    mapping = {
+        "255.255.255.252": 30,
+        "255.255.255.248": 29,
+        "255.255.255.240": 28,
+        "255.255.255.0": 24,
+        "255.255.0.0": 16,
+        "255.0.0.0": 8,
+    }
+    return mapping.get((mask or "").strip())
+
+
+def reconnect_mobile_data() -> dict:
+    notes = []
+    if not Path(QMI_MODEM).exists():
+        raise HTTPException(status_code=500, detail=f"QMI modem not found: {QMI_MODEM}")
+    if not Path(f"/sys/class/net/{WWAN_IFACE}").exists():
+        raise HTTPException(status_code=500, detail=f"WWAN interface not found: {WWAN_IFACE}")
+
+    run_cmd(["ip", "link", "set", WWAN_IFACE, "down"], timeout=5)
+    try:
+        Path(f"/sys/class/net/{WWAN_IFACE}/qmi/raw_ip").write_text("Y")
+    except Exception as e:
+        notes.append(f"raw_ip write failed: {e}")
+    run_cmd(["ip", "link", "set", WWAN_IFACE, "up"], timeout=5)
+
+    status_before = run_cmd(["qmicli", "-d", QMI_MODEM, "--wds-get-packet-service-status"], timeout=8)
+    status_text = status_before["stdout"] or status_before["stderr"]
+    if "connected" not in status_text.lower():
+        start = run_cmd([
+            "qmicli", "-p", "-d", QMI_MODEM,
+            '--device-open-net=net-raw-ip|net-no-qos-header',
+            "--wds-start-network=apn='internet',ip-type=4",
+            '--client-no-release-cid'
+        ], timeout=25)
+        if not start["ok"]:
+            detail = start["stderr"] or start["stdout"] or "Failed to start mobile-data session"
+            raise HTTPException(status_code=500, detail=detail)
+        notes.append("Started fresh QMI data session")
+    else:
+        notes.append("Packet service already connected")
+
+    current = run_cmd(["qmicli", "-p", "-d", QMI_MODEM, "--wds-get-current-settings"], timeout=10)
+    if not current["ok"]:
+        detail = current["stderr"] or current["stdout"] or "Failed to get current QMI settings"
+        raise HTTPException(status_code=500, detail=detail)
+
+    parsed = parse_qmi_settings(current["stdout"])
+    ip = parsed.get("ipv4")
+    mask = parsed.get("subnet_mask")
+    gw = parsed.get("gateway")
+    dns1 = parsed.get("dns1")
+    dns2 = parsed.get("dns2")
+    prefix = mask_to_prefix(mask)
+
+    if not ip or not mask or not gw or prefix is None:
+        raise HTTPException(status_code=500, detail="Failed to parse IPv4/gateway settings from current QMI session")
+
+    run_cmd(["ip", "addr", "flush", "dev", WWAN_IFACE], timeout=5)
+    add_ip = run_cmd(["ip", "addr", "add", f"{ip}/{prefix}", "dev", WWAN_IFACE], timeout=5)
+    if not add_ip["ok"]:
+        raise HTTPException(status_code=500, detail=add_ip["stderr"] or add_ip["stdout"] or "Failed to assign IPv4 to wwan0")
+
+    route = run_cmd(["ip", "route", "replace", "default", "via", gw, "dev", WWAN_IFACE, "metric", "100"], timeout=5)
+    if not route["ok"]:
+        raise HTTPException(status_code=500, detail=route["stderr"] or route["stdout"] or "Failed to apply default route")
+
+    try:
+        lines = []
+        if dns1:
+            lines.append(f"nameserver {dns1}")
+        if dns2:
+            lines.append(f"nameserver {dns2}")
+        if lines:
+            Path("/etc/resolv.conf").write_text("\n".join(lines) + "\n")
+    except Exception as e:
+        notes.append(f"Failed to write DNS: {e}")
+
+    after = get_mobile_data_status()
+    after["notes"] = (after.get("notes") or []) + notes
+    return {
+        "ok": True,
+        "message": "Mobile data reconnect finished",
+        "mobile_data": after,
+    }
+
+
+
+
+def tail_text_file(path_str: str, max_lines: int = 50) -> List[str]:
+    try:
+        p = Path(path_str)
+        if not p.exists():
+            return []
+        with p.open("r", errors="ignore") as f:
+            lines = f.readlines()[-max_lines:]
+        return [ln.rstrip("\n") for ln in lines]
+    except Exception as e:
+        return [f"ERROR reading {path_str}: {e}"]
+
+
+
+def filtered_kernel_module_logs(max_lines: int = 20) -> List[str]:
+    patterns = re.compile(r"sim|ttyUSB|cdc|wwan|qmi|gps|camera|uvc|video|usb", re.I)
+
+    lines = tail_text_file("/var/log/kern.log", max_lines=max_lines * 5)
+    if lines:
+        filtered = [ln for ln in lines if patterns.search(ln)]
+        if filtered:
+            return filtered[-max_lines:]
+
+    cmd = run_cmd(["journalctl", "-k", "-n", str(max_lines * 5), "--no-pager"], timeout=8)
+    raw = cmd.get("stdout", "") if cmd.get("ok") else ""
+    if raw:
+        filtered = [ln for ln in raw.splitlines() if patterns.search(ln)]
+        if filtered:
+            return filtered[-max_lines:]
+
+    cmd = run_cmd(["dmesg", "-T"], timeout=8)
+    raw = cmd.get("stdout", "") if cmd.get("ok") else ""
+    if raw:
+        filtered = [ln for ln in raw.splitlines() if patterns.search(ln)]
+        if filtered:
+            return filtered[-max_lines:]
+
+    return []
+
+
+def filtered_ssh_logs(max_lines: int = 50) -> List[str]:
+    patterns = re.compile(r"sshd|ssh", re.I)
+    lines = tail_text_file("/var/log/auth.log", max_lines=max_lines)
+    if lines:
+        filtered = [ln for ln in lines if patterns.search(ln)]
+        if filtered:
+            return filtered[-max_lines:]
+    cmd = run_cmd(["journalctl", "-u", "ssh", "-n", str(max_lines), "--no-pager"], timeout=8)
+    raw = cmd.get("stdout", "") if cmd.get("ok") else ""
+    if not raw:
+        cmd = run_cmd(["journalctl", "-u", "sshd", "-n", str(max_lines), "--no-pager"], timeout=8)
+        raw = cmd.get("stdout", "") if cmd.get("ok") else cmd.get("stderr", "")
+    if not raw:
+        return []
+    filtered = [ln for ln in raw.splitlines() if patterns.search(ln)]
+    return filtered[-max_lines:]
+
+
+def current_ssh_sessions() -> List[dict]:
+    out = []
+    cmd = run_cmd(["who"], timeout=4)
+    raw = cmd.get("stdout", "") if cmd.get("ok") else ""
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) >= 5:
+            out.append({
+                "user": parts[0],
+                "tty": parts[1],
+                "date": f"{parts[2]} {parts[3]}",
+                "from": parts[4].strip("()"),
+                "raw": line,
+            })
+        elif len(parts) >= 4:
+            out.append({
+                "user": parts[0],
+                "tty": parts[1],
+                "date": f"{parts[2]} {parts[3]}",
+                "from": "",
+                "raw": line,
+            })
+    return out
+
+
+def simple_ssh_access_summary(max_items: int = 20) -> List[str]:
+    sessions = current_ssh_sessions()
+    lines: List[str] = []
+    seen = set()
+
+    # Active sessions first
+    for s in sessions:
+        user = s.get("user") or "?"
+        addr = s.get("from") or "local"
+        tty = s.get("tty") or "?"
+        item = f"ACTIVE | {user} | {addr} | {tty}"
+        if item not in seen:
+            lines.append(item)
+            seen.add(item)
+
+    # Then recent auth/journal lines, simplified to accepted/failed + address
+    raw_lines = filtered_ssh_logs(100)
+    accepted_pat = re.compile(r"Accepted\s+\S+\s+for\s+(?P<user>\S+)\s+from\s+(?P<ip>[0-9a-fA-F:.]+)", re.I)
+    failed_pat = re.compile(r"Failed\s+\S+\s+for(?:\s+invalid user)?\s+(?P<user>\S+)\s+from\s+(?P<ip>[0-9a-fA-F:.]+)", re.I)
+    invalid_pat = re.compile(r"Invalid user\s+(?P<user>\S+)\s+from\s+(?P<ip>[0-9a-fA-F:.]+)", re.I)
+    closed_pat = re.compile(r"Disconnected from(?: invalid user)?\s+(?P<user>\S+)?\s*(?P<ip>[0-9a-fA-F:.]+)", re.I)
+
+    for ln in reversed(raw_lines):
+        item = None
+        m = accepted_pat.search(ln)
+        if m:
+            item = f"LOGIN OK | {m.group('user')} | {m.group('ip')}"
+        else:
+            m = failed_pat.search(ln)
+            if m:
+                item = f"LOGIN FAIL | {m.group('user')} | {m.group('ip')}"
+            else:
+                m = invalid_pat.search(ln)
+                if m:
+                    item = f"INVALID USER | {m.group('user')} | {m.group('ip')}"
+                else:
+                    m = closed_pat.search(ln)
+                    if m and m.group('ip'):
+                        item = f"DISCONNECTED | {m.group('user') or '?'} | {m.group('ip')}"
+        if item and item not in seen:
+            lines.append(item)
+            seen.add(item)
+        if len(lines) >= max_items:
+            break
+
+    return lines[:max_items]
+
+
+def recent_gps_logs(limit: int = 20) -> List[dict]:
+    return db_query(
+        """
+        SELECT ts, utc, lat, lon, speed, course, sat, google_maps
+        FROM gps_points
+        ORDER BY ts DESC
+        LIMIT ?
+        """,
+        (limit,)
+    )
+
+
+def recent_sms_sent_logs(limit: int = 20) -> List[dict]:
+    return db_query(
+        """
+        SELECT ts, to_number AS number, message, ok, resp
+        FROM sms_sent
+        ORDER BY ts DESC
+        LIMIT ?
+        """,
+        (limit,)
+    )
+
+
+def recent_sms_inbox_logs(limit: int = 20) -> List[dict]:
+    return db_query(
+        """
+        SELECT ts, from_number, message, raw
+        FROM sms_inbox
+        ORDER BY ts DESC
+        LIMIT ?
+        """,
+        (limit,)
+    )
+
+
+def recent_activity_logs(limit: int = 50) -> List[dict]:
+    return db_query(
+        "SELECT ts, level, category, detail FROM activity ORDER BY ts DESC LIMIT ?",
+        (limit,)
+    )
+
+
+
+
+def present_connected_devices() -> List[str]:
+    items: List[str] = []
+
+    if Path(QMI_MODEM).exists():
+        items.append(f"SIM7000 QMI modem present: {QMI_MODEM}")
+    else:
+        items.append(f"SIM7000 QMI modem missing: {QMI_MODEM}")
+
+    if Path(f"/sys/class/net/{WWAN_IFACE}").exists():
+        items.append(f"WWAN interface present: {WWAN_IFACE}")
+    else:
+        items.append(f"WWAN interface missing: {WWAN_IFACE}")
+
+    tty_usbs = sorted(glob.glob("/dev/ttyUSB*"))
+    if tty_usbs:
+        items.append("USB modem serial ports: " + ", ".join(tty_usbs))
+    else:
+        items.append("USB modem serial ports: none")
+
+    videos = sorted(glob.glob("/dev/video*"))
+    if videos:
+        items.append("Video devices: " + ", ".join(videos))
+    else:
+        items.append("Video devices: none")
+
+    lsusb = run_cmd(["lsusb"], timeout=5)
+    if lsusb["ok"] and lsusb["stdout"]:
+        lines = [ln.strip() for ln in lsusb["stdout"].splitlines() if ln.strip()]
+        lines = lines[-12:]
+        items.append("USB devices now connected:")
+        items.extend([f"  {ln}" for ln in lines])
+
+    return items
+
+def ongoing_logs_payload() -> dict:
+    return {
+        "activity": recent_activity_logs(50),
+        "gps": recent_gps_logs(20),
+        "sms_sent": recent_sms_sent_logs(20),
+        "sms_inbox": recent_sms_inbox_logs(20),
+        "cameras": list_cameras(),
+        "mobile_data": get_mobile_data_status(),
+        "present_devices": present_connected_devices(),
+        "ssh_sessions": current_ssh_sessions(),
+        "ssh_access_summary": simple_ssh_access_summary(20),
+        "ssh_log_tail": filtered_ssh_logs(50),
+        "kernel_module_log_tail": filtered_kernel_module_logs(20),
+    }
+
+@app.get("/mobile_data/status")
+def mobile_data_status():
+    return get_mobile_data_status()
+
+
+@app.post("/mobile_data/reconnect")
+def mobile_data_reconnect():
+    return reconnect_mobile_data()
+
+
 @app.get("/status")
 def get_status():
     groups = db_query("SELECT name FROM groups ORDER BY name ASC")
     hb = hb_get_status()
+    mobile = get_mobile_data_status()
 
     latest_net_rows = db_query(
         """
@@ -1137,8 +1832,10 @@ def get_status():
         "groups_count": len(groups),
         "groups": [g["name"] for g in groups],
         "server_time": now_dt_ph().strftime("%m/%d/%Y %I:%M %p"),
+        "db_backend": _resolve_db_backend(),
         "heartbeat": hb,
         "latest_network_log": latest_net,
+        "mobile_data": mobile,
     }
 
 
@@ -1322,16 +2019,24 @@ def send_sms(req: SendSMSRequest):
 
 @app.get("/messages")
 def messages_get():
-    activity = db_query(
-        "SELECT ts, level, category, detail FROM activity ORDER BY ts DESC LIMIT 20"
-    )
-    sms_sent = db_query(
-        "SELECT ts, to_number AS number, message, ok FROM sms_sent ORDER BY ts DESC LIMIT 20"
-    )
-    sms_inbox = db_query(
-        "SELECT ts, from_number, message FROM sms_inbox ORDER BY ts DESC LIMIT 20"
-    )
-    return {"activity": activity, "sms": sms_sent, "sms_inbox": sms_inbox}
+    payload = ongoing_logs_payload()
+    return {
+        "activity": payload["activity"][:20],
+        "sms": payload["sms_sent"][:20],
+        "sms_inbox": payload["sms_inbox"][:20],
+        "gps": payload["gps"],
+        "cameras": payload["cameras"],
+        "mobile_data": payload["mobile_data"],
+        "ssh_sessions": payload["ssh_sessions"],
+        "ssh_access_summary": payload["ssh_access_summary"],
+        "ssh_log_tail": payload["ssh_log_tail"],
+        "kernel_module_log_tail": payload["kernel_module_log_tail"],
+    }
+
+
+@app.get("/logs/ongoing")
+def logs_ongoing():
+    return ongoing_logs_payload()
 
 
 @app.get("/sms_inbox")
@@ -1391,7 +2096,11 @@ def gps_track_clear():
 @app.get("/cameras")
 def cameras_get():
     cams = list_cameras()
-    return {"count": len(cams), "cameras": cams}
+    return {
+        "count": len(cams),
+        "active_streams": sum(1 for c in cams if c.get("streaming")),
+        "cameras": cams,
+    }
 
 
 @app.get("/camera/{camera_index}/snapshot.jpg")
@@ -1412,6 +2121,68 @@ def camera_stream(camera_index: int):
         )
     except Exception as e:
         raise HTTPException(500, detail=str(e))
+
+
+def write_multisheet_xlsx(path: Path, sheets: List[tuple[str, List[str], List[dict]]]):
+    wb = Workbook()
+    first = True
+    for title, headers, rows in sheets:
+        ws = wb.active if first else wb.create_sheet()
+        ws.title = (title or "Sheet")[:31]
+        first = False
+        ws.append(headers)
+        for r in rows:
+            out_row = []
+            for h in headers:
+                v = r.get(h, "")
+                if h in ("ts", "created_at", "last_seen_ts", "last_online_ts", "last_offline_ts") and v:
+                    out_row.append(excel_ts(v))
+                else:
+                    if isinstance(v, (dict, list)):
+                        v = json.dumps(v, ensure_ascii=False)
+                    out_row.append(v)
+            ws.append(out_row)
+        for col_name in ("ts", "created_at", "last_seen_ts", "last_online_ts", "last_offline_ts"):
+            if col_name in headers:
+                col = headers.index(col_name) + 1
+                for cellcol in ws.iter_cols(min_col=col, max_col=col, min_row=2):
+                    for c in cellcol:
+                        if isinstance(c.value, datetime):
+                            c.number_format = "m/d/yyyy h:mm AM/PM"
+    wb.save(path)
+
+
+@app.get("/export/ongoing_logs.xlsx")
+def export_ongoing_logs():
+    payload = ongoing_logs_payload()
+    out = EXPORT_DIR / f"ongoing_logs_{now_dt_ph().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    mobile = payload.get("mobile_data", {}) or {}
+    mobile_rows = [{k: (json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v) for k, v in mobile.items() if k != "raw"}]
+    if mobile.get("raw"):
+        mobile_rows[0]["raw"] = json.dumps(mobile.get("raw"), ensure_ascii=False)
+    camera_rows = payload.get("cameras", []) or []
+    ssh_rows = payload.get("ssh_sessions", []) or []
+    ssh_summary_rows = [{"summary": line} for line in (payload.get("ssh_access_summary", []) or [])]
+    present_device_rows = [{"summary": line} for line in (payload.get("present_devices", []) or [])]
+    ssh_log_rows = [{"line": line} for line in (payload.get("ssh_log_tail", []) or [])]
+    kernel_rows = [{"line": line} for line in (payload.get("kernel_module_log_tail", []) or [])]
+
+    sheets = [
+        ("Activity", ["ts", "level", "category", "detail"], payload.get("activity", []) or []),
+        ("GPS", ["ts", "utc", "lat", "lon", "speed", "sat", "google_maps"], payload.get("gps", []) or []),
+        ("SMS Sent", ["ts", "number", "message", "ok", "resp"], payload.get("sms_sent", []) or []),
+        ("SMS Inbox", ["ts", "from_number", "message", "raw"], payload.get("sms_inbox", []) or []),
+        ("PresentDevices", ["summary"], present_device_rows),
+        ("Cameras", sorted({k for row in camera_rows for k in row.keys()}) or ["device", "exists"], camera_rows),
+        ("Mobile Data", sorted(mobile_rows[0].keys()) if mobile_rows else ["connected"], mobile_rows),
+        ("SSH Sessions", sorted({k for row in ssh_rows for k in row.keys()}) or ["raw"], ssh_rows),
+        ("SSH Log Tail", ["line"], ssh_log_rows),
+        ("Kernel Log Tail", ["line"], kernel_rows),
+    ]
+
+    write_multisheet_xlsx(out, sheets)
+    return FileResponse(out, filename=out.name)
 
 
 # ===================== Excel Export =====================
@@ -1548,8 +2319,7 @@ def admin_reset_db():
         pass
 
     try:
-        if DB_PATH.exists():
-            DB_PATH.unlink()
+        db_reset_storage()
     except Exception as e:
         raise HTTPException(500, detail=f"Failed to remove DB: {e}")
 
@@ -1576,3 +2346,6 @@ def admin_reset_db():
     threading.Thread(target=sms_inbox_thread, daemon=True).start()
 
     return {"ok": True, "message": "Database reset and recreated."}
+
+
+

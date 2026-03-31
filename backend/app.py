@@ -2,7 +2,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from app_2 import App
+from app32326 import App
 
 
 if __name__ == "__main__":

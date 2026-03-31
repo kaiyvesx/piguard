@@ -22,3 +22,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Local Android SDK/tools
+Android/
+Android/**/*.zip
+Android/**/*.tar
+Android/**/*.tgz
+Android/**/*.7z

@@ -47,17 +47,27 @@ class RealtimeHub:
             to_send = list(self._pending[device_id])
             self._pending[device_id].clear()
             ws = self._devices.get(device_id)
+            ws_connected = ws is not None and ws.client_state == WebSocketState.CONNECTED
 
         if not to_send:
             return
 
-        if ws is None or ws.client_state != WebSocketState.CONNECTED:
+        if not ws_connected:
             async with self._lock:
                 self._pending[device_id] = to_send + self._pending[device_id]
             return
 
-        for item in to_send:
-            await self._send_json(ws, item)
+        assert ws is not None
+        for idx, item in enumerate(to_send):
+            try:
+                await self._send_json(ws, item)
+            except Exception:
+                # Socket state may have changed after we released the lock.
+                # Requeue this and remaining unsent items in original order.
+                unsent = to_send[idx:]
+                async with self._lock:
+                    self._pending[device_id] = unsent + self._pending[device_id]
+                return
 
     async def admin_issue_command(
         self,

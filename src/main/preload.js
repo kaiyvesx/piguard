@@ -215,6 +215,12 @@ contextBridge.exposeInMainWorld('backendBridge', {
     unwrapResponse(ipcRenderer.invoke('backend:sendCommand', action, payload, deviceId)),
 
   // =====================
+  // USB / ADB Device Detection
+  // =====================
+  listAdbDevices: () => unwrapResponse(ipcRenderer.invoke('adb:listDevices')),
+  getPreferredDevice: () => unwrapResponse(ipcRenderer.invoke('adb:getPreferredDevice')),
+
+  // =====================
   // Event Handling
   // =====================
 

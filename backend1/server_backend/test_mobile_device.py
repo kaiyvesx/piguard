@@ -6,10 +6,11 @@ Delete this file when testing is complete.
 """
 import asyncio
 import json
+import os
 import websockets
 
 BACKEND_URL = "ws://localhost:8000/ws/device"
-MOBILE_TOKEN = "e2WYi3vScfE1r0WK0K0rznZzBQjXbe9u"
+MOBILE_TOKEN = os.getenv("MOBILE_BEARER_TOKEN", "change-me-mobile-token")
 DEVICE_ID = "mobile-01"
 
 # Fake GPS data to return
