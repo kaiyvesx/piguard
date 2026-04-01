@@ -11,6 +11,7 @@
   // Backend connection state
   let backendConnected = false;
   let useBackend = true; // Prefer backend WebSocket so ADB auto-target can be used by default
+  const hasTrackingBridge = !!(window.trackingBridge && typeof window.trackingBridge.on === 'function');
 
   // Initialize backend connection if available
   if (backendApi) {
@@ -43,47 +44,65 @@
 
     backendApi.on('command_response', (data) => {
       console.log('[API] Command response:', data.action, data.status);
-      // Handle real-time responses here if needed
-      if (data && (data.action === 'tracking_approved' || data.action === 'tracking_rejected')) {
-        const did = String(data.device_id || '').trim();
-        if (did) {
-          pendingTrackingRequests.delete(did);
-          renderTrackingRequestBanners();
-          if (data.action === 'tracking_rejected') {
-            removeDeviceLocationLayer(did);
-          }
-        }
+      if (!hasTrackingBridge) {
+        handleCommandLifecycleEvent('command_response', data);
       }
     });
 
     backendApi.on('command_queued', (data) => {
       console.log('[API] Command queued (device offline):', data.action);
-      // Show notification that device is offline
+      if (!hasTrackingBridge) {
+        handleCommandLifecycleEvent('command_queued', data);
+      }
+    });
+
+    backendApi.on('command_accepted', (data) => {
+      if (!hasTrackingBridge) {
+        handleCommandLifecycleEvent('command_accepted', data);
+      }
     });
 
     backendApi.on('device_event', (data) => {
+      if (hasTrackingBridge) {
+        const action = getTrackingAction(data);
+        if (action === 'device_online' || action === 'device_offline' || action === 'location_update') {
+          return;
+        }
+      }
       handleBackendDeviceEvent(data);
     });
 
-    if (window.electronAPI && typeof window.electronAPI.on === 'function') {
-      window.electronAPI.on('tracking:request', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_request' }));
+    if (hasTrackingBridge) {
+      window.trackingBridge.onDeviceOnline((data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
+      window.trackingBridge.onDeviceOffline((data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
+      window.trackingBridge.onLocation((data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
+      window.trackingBridge.onDevicesUpdate((data) => applyTrackingDevicesUpdate(data));
+      window.trackingBridge.onMessageLog((data) => applyTrackingMessageLog(data));
+
+      window.trackingBridge.on('tracking:request', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_request' }));
+      window.trackingBridge.on('tracking:session_end', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_session_end' }));
+      window.trackingBridge.on('tracking:approved', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_approved' }));
+      window.trackingBridge.on('tracking:rejected', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_rejected' }));
+
+      window.trackingBridge.getDeviceList()
+        .then((snapshot) => {
+          applyTrackingDevicesUpdate(snapshot);
+        })
+        .catch((err) => {
+          console.warn('[Tracking] Failed to load initial device list:', err.message);
+        });
+    } else if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+      window.electronAPI.on('tracking:device_online', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
+      window.electronAPI.on('tracking:device_offline', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
       window.electronAPI.on('tracking:location', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
+      window.electronAPI.on('tracking:devices_update', (_evt, data) => applyTrackingDevicesUpdate(data));
+      window.electronAPI.on('tracking:message_log', (_evt, data) => applyTrackingMessageLog(data));
+
+      // Legacy fallback channels.
+      window.electronAPI.on('tracking:request', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_request' }));
       window.electronAPI.on('tracking:session_end', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_session_end' }));
-      window.electronAPI.on('tracking:approved', (_evt, data) => {
-        const did = String(data && data.device_id || '').trim();
-        if (did) {
-          pendingTrackingRequests.delete(did);
-          renderTrackingRequestBanners();
-        }
-      });
-      window.electronAPI.on('tracking:rejected', (_evt, data) => {
-        const did = String(data && data.device_id || '').trim();
-        if (did) {
-          pendingTrackingRequests.delete(did);
-          renderTrackingRequestBanners();
-          removeDeviceLocationLayer(did);
-        }
-      });
+      window.electronAPI.on('tracking:approved', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_approved' }));
+      window.electronAPI.on('tracking:rejected', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_rejected' }));
     }
   }
 
@@ -265,9 +284,15 @@
   const cameraRecordingActiveCountEl = document.getElementById('cameraRecordingActiveCount');
   const cameraRecordingListEl = document.getElementById('cameraRecordingList');
   const cameraRecordingLastActionEl = document.getElementById('cameraRecordingLastAction');
-  const trackingRequestsEl = document.getElementById('trackingRequestsMobile') || document.getElementById('trackingRequestsSidebar') || document.getElementById('trackingRequests');
-  const trackingDeviceRowsEl = document.getElementById('trackingDeviceRowsMobile') || document.getElementById('trackingDeviceRowsSidebar') || document.getElementById('trackingDeviceRows');
+  const trackingCardsEl = document.getElementById('trackingDeviceCards');
+  const trackingLogPanelEl = document.getElementById('trackingLogPanel');
+  const trackingLogToggleEl = document.getElementById('trackingLogToggle');
+  const trackingLogToggleIconEl = document.getElementById('trackingLogToggleIcon');
+  const trackingMessageLogEl = document.getElementById('trackingMessageLog');
   const mobileTrackingStatusEl = document.getElementById('mobileTrackingStatus');
+  const mobileGpsCoordsEl = document.getElementById('mobileGpsCoords');
+  const trackingMapHintEl = document.getElementById('trackingMapHint');
+  const trackingRequestsEl = document.getElementById('trackingRequestsMobile') || document.getElementById('trackingRequestsSidebar') || document.getElementById('trackingRequests');
 
   let selectedNumber = null;
   let lastBase = null;
@@ -297,10 +322,20 @@
   const recordingCameraIndexes = new Set();
   let cameraMenuTargetIndex = 'all';
   let lastRecordingActionLabel = 'No recording command sent';
-  const pendingTrackingRequests = new Map();
-  const deviceLayers = new Map();
+  let expandedCameraIndex = null;
+  const trackingDevices = new Map();
+  const trackingVisuals = new Map();
+  const trackingMessageLog = [];
+  const trackingMessageKeys = new Set();
+  const trackingPendingRequests = new Map();
+  const recentTrackingEventKeys = new Map();
+  const queuedLifecycleLoggedDevices = new Set();
   const deviceColors = new Map();
-  const colorOrder = ['#2196F3', '#4CAF50', '#FF9800'];
+  const colorOrder = ['#1e88e5', '#2e7d32', '#f57c00', '#8e24aa', '#d81b60', '#00897b', '#5e35b1'];
+  const OFFLINE_MARKER_COLOR = '#98a2b3';
+  const TRACKING_MANILA_CENTER = [14.5995, 120.9842];
+  let selectedTrackingDeviceId = '';
+  let trackingUiInitialized = false;
 
   function setConnectionState(connected, message, tooltip = '') {
     if (!connStatusEl) return;
@@ -352,48 +387,238 @@
     return String(event?.device_id || payload?.device_id || '').trim();
   }
 
+  function getTrackingPayload(event) {
+    return event && typeof event.payload === 'object' ? event.payload : {};
+  }
+
   function isMobileTrackingDevice(deviceId) {
-    const id = String(deviceId || '').trim().toLowerCase();
-    if (!id) return false;
-    // Accept explicit mobile ids and common ADB serial formats (e.g. FY2418910A51).
-    const looksLikeAdbSerial = /^[a-z0-9_-]{8,}$/i.test(id);
-    return id === '13e1b5b146eba495' || id.includes('mobile') || looksLikeAdbSerial;
+    return !!String(deviceId || '').trim();
   }
 
   function getTrackingMap() {
     return window.mobileMap || (typeof map !== 'undefined' ? map : null);
   }
 
+  function normalizeIsoTime(value, fallback = null) {
+    if (!value) return fallback;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return fallback;
+    return d.toISOString();
+  }
+
   function getDeviceColor(deviceId) {
     if (deviceColors.has(deviceId)) return deviceColors.get(deviceId);
-    const id = String(deviceId || '').toLowerCase();
-    let color = '#FF9800';
-    if (id === '13e1b5b146eba495' || id.includes('mobile')) {
-      color = '#2196F3';
-    } else if (!Array.from(deviceColors.values()).includes('#4CAF50')) {
-      color = '#4CAF50';
-    } else {
-      const index = deviceColors.size % colorOrder.length;
-      color = colorOrder[index];
-    }
+    const index = deviceColors.size % colorOrder.length;
+    const color = colorOrder[index];
     deviceColors.set(deviceId, color);
     return color;
   }
 
-  function buildDeviceIcon(color, waiting = false) {
-    const fill = waiting ? `${color}AA` : color;
-    const border = waiting ? '2px dashed #fff' : '2px solid #fff';
+  function buildDeviceIcon(color, isOffline = false, isSelected = false) {
+    const base = isOffline ? OFFLINE_MARKER_COLOR : color;
+    const ring = isSelected ? '#f6f8fc' : '#ffffff';
+    const halo = isSelected ? `${base}CC` : `${base}66`;
     return L.divIcon({
       className: '',
-      html: `<div style="width:18px;height:18px;border-radius:50%;background:${fill};border:${border};box-shadow:0 0 0 4px ${color}55,0 2px 8px rgba(0,0,0,.25);"></div>`,
+      html: `<div style="width:18px;height:18px;border-radius:50%;background:${base};border:2px solid ${ring};box-shadow:0 0 0 4px ${halo},0 2px 10px rgba(0,0,0,.32);"></div>`,
       iconSize: [18, 18],
       iconAnchor: [9, 9],
     });
   }
 
+  function formatRelativeTime(ts) {
+    if (!ts) return 'unknown';
+    const when = new Date(ts);
+    if (Number.isNaN(when.getTime())) return 'unknown';
+
+    const diffMs = Date.now() - when.getTime();
+    if (diffMs <= 10000) return 'just now';
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return '<1m ago';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  function shortDeviceId(deviceId) {
+    const raw = String(deviceId || '').trim();
+    if (raw.length <= 12) return raw;
+    return `${raw.slice(0, 8)}...`;
+  }
+
+  function getLocationFromEvent(event) {
+    const payload = getTrackingPayload(event);
+    const nested = payload && typeof payload.payload === 'object' ? payload.payload : null;
+    const source = payload.latitude != null || payload.longitude != null
+      ? payload
+      : (nested && (nested.latitude != null || nested.longitude != null) ? nested : event);
+
+    const latitude = toNum(source?.latitude ?? source?.lat);
+    const longitude = toNum(source?.longitude ?? source?.lng);
+    if (latitude == null || longitude == null) return null;
+
+    const timestamp = normalizeIsoTime(source?.timestamp, new Date().toISOString());
+    return {
+      latitude,
+      longitude,
+      timestamp,
+      ts: Number(source?.ts || Date.now()),
+    };
+  }
+
+  function buildTrackingEventKey(action, deviceId, payload) {
+    const ts = payload?.timestamp || payload?.connected_at || payload?.disconnected_at || '';
+    const lat = payload?.latitude ?? payload?.lat ?? '';
+    const lon = payload?.longitude ?? payload?.lng ?? '';
+    return `${action}|${deviceId}|${ts}|${lat}|${lon}`;
+  }
+
+  function shouldSkipTrackingEvent(action, deviceId, payload = {}) {
+    const key = buildTrackingEventKey(action, deviceId, payload);
+    const now = Date.now();
+    const lastSeen = recentTrackingEventKeys.get(key) || 0;
+    recentTrackingEventKeys.set(key, now);
+
+    if (recentTrackingEventKeys.size > 300) {
+      for (const [entryKey, value] of recentTrackingEventKeys.entries()) {
+        if (now - value > 5000) {
+          recentTrackingEventKeys.delete(entryKey);
+        }
+      }
+    }
+
+    return now - lastSeen < 350;
+  }
+
+  function ensureTrackingDeviceState(deviceId) {
+    const key = String(deviceId || '').trim();
+    if (!key) return null;
+    if (!trackingDevices.has(key)) {
+      trackingDevices.set(key, {
+        device_id: key,
+        status: 'offline',
+        connected_at: null,
+        disconnected_at: null,
+        last_seen: null,
+        last_location: null,
+        route_points: [],
+        message_log: [],
+      });
+    }
+    return trackingDevices.get(key);
+  }
+
+  function appendTrackingMessage(entry) {
+    if (!entry || typeof entry !== 'object') return;
+    const normalized = {
+      timestamp: normalizeIsoTime(entry.timestamp, new Date().toISOString()),
+      device_id: String(entry.device_id || '').trim() || '-',
+      action: String(entry.action || 'unknown').trim().toLowerCase(),
+      payload: entry.payload && typeof entry.payload === 'object' ? entry.payload : {},
+      level: String(entry.level || '').trim().toLowerCase(),
+      status: String(entry.status || '').trim().toLowerCase(),
+    };
+
+    const signature = `${normalized.timestamp}|${normalized.device_id}|${normalized.action}|${JSON.stringify(normalized.payload)}`;
+    if (trackingMessageKeys.has(signature)) return;
+
+    trackingMessageKeys.add(signature);
+    trackingMessageLog.push(normalized);
+
+    while (trackingMessageLog.length > 50) {
+      trackingMessageLog.shift();
+    }
+    if (trackingMessageKeys.size > 1000) {
+      trackingMessageKeys.clear();
+      for (const item of trackingMessageLog) {
+        const itemSignature = `${item.timestamp}|${item.device_id}|${item.action}|${JSON.stringify(item.payload)}`;
+        trackingMessageKeys.add(itemSignature);
+      }
+    }
+  }
+
+  function applyTrackingMessageLog(data) {
+    if (!data) return;
+
+    if (Array.isArray(data.entries)) {
+      trackingMessageLog.length = 0;
+      trackingMessageKeys.clear();
+      data.entries.slice(-50).forEach((entry) => appendTrackingMessage(entry));
+    }
+
+    if (data.entry && typeof data.entry === 'object') {
+      appendTrackingMessage(data.entry);
+    }
+
+    renderTrackingMessageLog();
+  }
+
+  function classifyTrackingLogKind(entry) {
+    const action = String(entry?.action || '').toLowerCase();
+    const level = String(entry?.level || '').toLowerCase();
+    if (level === 'error' || action.includes('error') || entry?.status === 'error') return 'error';
+    if (action.includes('command')) return 'command';
+    if (action.includes('location')) return 'location';
+    if (action.includes('offline') || action.includes('session_end')) return 'offline';
+    if (action.includes('online')) return 'online';
+    return 'location';
+  }
+
+  function formatTrackingLogDetail(entry) {
+    const payload = entry && typeof entry.payload === 'object' ? entry.payload : {};
+    const lat = toNum(payload.latitude ?? payload.lat);
+    const lon = toNum(payload.longitude ?? payload.lng);
+    if (lat != null && lon != null) {
+      return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    }
+    if (payload.error && typeof payload.error === 'string') {
+      return payload.error;
+    }
+    if (payload.message && typeof payload.message === 'string') {
+      return payload.message;
+    }
+    if (payload.status && typeof payload.status === 'string') {
+      return payload.status;
+    }
+    if (payload.connected_at) return `connected ${fmtTime(payload.connected_at)}`;
+    if (payload.disconnected_at) return `disconnected ${fmtTime(payload.disconnected_at)}`;
+    const keys = Object.keys(payload);
+    if (!keys.length) return '-';
+    return keys.slice(0, 2).map((k) => `${k}:${String(payload[k])}`).join(' | ');
+  }
+
+  function renderTrackingMessageLog() {
+    if (!trackingMessageLogEl) return;
+
+    if (!trackingMessageLog.length) {
+      trackingMessageLogEl.innerHTML = '<div class="tracking-log-empty">No tracking events yet.</div>';
+      return;
+    }
+
+    const lines = trackingMessageLog.slice(-50).reverse();
+    trackingMessageLogEl.innerHTML = lines.map((entry) => {
+      const kind = classifyTrackingLogKind(entry);
+      const detail = formatTrackingLogDetail(entry);
+      return `<div class="tracking-log-line kind-${kind}">
+        <span class="time">[${escapeHtml(fmtTime(entry.timestamp))}]</span>
+        <span class="device">${escapeHtml(shortDeviceId(entry.device_id))}</span>
+        <span class="action">${escapeHtml(String(entry.action || '').replace(/^command_(request|response|accepted|queued):/, '$1:'))}</span>
+        <span class="detail">${escapeHtml(detail)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function setTrackingHint(message, isError = false) {
+    if (!trackingMapHintEl) return;
+    trackingMapHintEl.textContent = message;
+    trackingMapHintEl.style.color = isError ? '#ffb3bb' : '#d9ecff';
+  }
+
   function renderTrackingRequestBanners() {
     if (!trackingRequestsEl) return;
-    const items = Array.from(pendingTrackingRequests.values());
+    const items = Array.from(trackingPendingRequests.values());
     if (!items.length) {
       trackingRequestsEl.innerHTML = '';
       return;
@@ -403,7 +628,7 @@
       <div class="tracking-request-card" data-device-id="${escapeHtml(request.device_id)}" style="background:rgba(10,22,40,.9);border:1px solid rgba(0,200,255,.35);border-radius:10px;padding:10px 12px;box-shadow:0 6px 16px rgba(0,0,0,.25);">
         <div style="font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;">Tracking request</div>
         <div style="font-size:.78rem;font-weight:700;color:var(--text);margin-bottom:2px;">${escapeHtml(request.device_id)}</div>
-        <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px;">Requested at: ${escapeHtml(request.requested_at)}</div>
+        <div style="font-size:.68rem;color:var(--muted);margin-bottom:8px;">Requested at: ${escapeHtml(request.requested_at || '-')}</div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button type="button" class="tracking-reject-btn" data-device-id="${escapeHtml(request.device_id)}" style="height:30px;padding:0 10px;border-radius:8px;border:1px solid var(--card-border);background:var(--surface-1);color:var(--text);cursor:pointer;">Deny</button>
           <button type="button" class="tracking-accept-btn" data-device-id="${escapeHtml(request.device_id)}" style="height:30px;padding:0 10px;border-radius:8px;border:1px solid #2196F3;background:#2196F3;color:#fff;cursor:pointer;font-weight:700;">Accept</button>
@@ -426,181 +651,524 @@
   async function respondToTrackingRequestById(deviceId, approved) {
     const targetDeviceId = String(deviceId || '').trim();
     if (!targetDeviceId) return;
-    const action = approved ? 'tracking_approved' : 'tracking_rejected';
-    const payload = approved
-      ? { approved_by: 'electron-admin', approved_at: new Date().toISOString() }
-      : { reason: 'Permission denied by admin', denied_at: new Date().toISOString() };
 
     try {
-      await api.sendCommand(action, payload, targetDeviceId);
-      pendingTrackingRequests.delete(targetDeviceId);
-      renderTrackingRequestBanners();
-      if (approved) {
-        ensureDevicePlaceholderLayer(targetDeviceId);
+      if (window.trackingBridge && typeof window.trackingBridge.approve === 'function' && typeof window.trackingBridge.reject === 'function') {
+        if (approved) {
+          await window.trackingBridge.approve(targetDeviceId, {});
+        } else {
+          await window.trackingBridge.reject(targetDeviceId, {});
+        }
+      } else {
+        const action = approved ? 'tracking_approved' : 'tracking_rejected';
+        const payload = approved
+          ? { approved_by: 'electron-admin', approved_at: new Date().toISOString() }
+          : { reason: 'Permission denied by admin', denied_at: new Date().toISOString() };
+        await api.sendCommand(action, payload, targetDeviceId);
       }
+      trackingPendingRequests.delete(targetDeviceId);
+      renderTrackingRequestBanners();
     } catch (err) {
-      const reason = err && err.message ? err.message : 'Failed to send decision';
-      alert(`Failed to send ${action}: ${reason}`);
+      setTrackingHint(`Failed to respond to tracking request: ${err.message || 'Unknown error'}`, true);
     }
   }
 
-  function ensureDevicePlaceholderLayer(deviceId) {
+  function ensureTrackingVisual(deviceId) {
     const trackingMap = getTrackingMap();
-    if (!trackingMap) return;
-    const targetDeviceId = String(deviceId || '').trim();
-    if (!targetDeviceId || deviceLayers.has(targetDeviceId)) return;
-
-    const center = trackingMap.getCenter();
-    const lat = Number(center.lat);
-    const lon = Number(center.lng);
-    const color = getDeviceColor(targetDeviceId);
-    const marker = L.marker([lat, lon], { icon: buildDeviceIcon(color, true) }).addTo(trackingMap);
-    const routeLine = L.polyline([], { color, weight: 3, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(trackingMap);
-    marker.bindTooltip(`${targetDeviceId} (waiting for first GPS fix)`, { direction: 'top', offset: [0, -12] });
-
-    deviceLayers.set(targetDeviceId, {
-      marker,
-      routeLine,
-      routePoints: [],
-      color,
-      waiting: true,
-      lastLat: null,
-      lastLon: null,
-      lastUpdate: null,
-    });
-    updateTrackingCoordsRows();
-    fitMapToAllTrackingDevices();
-  }
-
-  function updateTrackingCoordsRows() {
-    if (!trackingDeviceRowsEl) return;
-    const rows = Array.from(deviceLayers.entries());
-    if (!rows.length) {
-      trackingDeviceRowsEl.innerHTML = '<tr><td colspan="4" style="padding:6px;color:var(--muted);">No active tracked mobile device.</td></tr>';
-      if (mobileTrackingStatusEl) mobileTrackingStatusEl.textContent = 'No active mobile tracking.';
-      return;
-    }
-
-    trackingDeviceRowsEl.innerHTML = rows.map(([deviceId, layer]) => {
-      const lat = Number.isFinite(Number(layer.lastLat)) ? Number(layer.lastLat).toFixed(6) : '-';
-      const lon = Number.isFinite(Number(layer.lastLon)) ? Number(layer.lastLon).toFixed(6) : '-';
-      const lastUpdate = layer.lastUpdate ? fmtTime(layer.lastUpdate) : '-';
-      return `<tr>
-        <td style="padding:4px 6px;white-space:nowrap;">${escapeHtml(deviceId)}</td>
-        <td style="padding:4px 6px;">${escapeHtml(lat)}</td>
-        <td style="padding:4px 6px;">${escapeHtml(lon)}</td>
-        <td style="padding:4px 6px;">${escapeHtml(lastUpdate)}</td>
-      </tr>`;
-    }).join('');
-
-    if (mobileTrackingStatusEl) {
-      const activeCount = rows.length;
-      mobileTrackingStatusEl.textContent = `${activeCount} active mobile device${activeCount === 1 ? '' : 's'}.`;
-    }
-  }
-
-  function fitMapToAllTrackingDevices() {
-    const trackingMap = getTrackingMap();
-    if (!trackingMap) return;
-    const points = Array.from(deviceLayers.values())
-      .filter((layer) => layer && layer.marker)
-      .map((layer) => layer.marker.getLatLng());
-    if (!points.length) return;
-    if (points.length === 1) {
-      trackingMap.setView(points[0], Math.max(trackingMap.getZoom(), 15), { animate: true });
-      return;
-    }
-    trackingMap.fitBounds(L.latLngBounds(points), { padding: [36, 36], maxZoom: 16, animate: true });
-  }
-
-  function upsertDeviceLocationLayer(event) {
-    const trackingMap = getTrackingMap();
-    if (!trackingMap) return;
-    const deviceId = getTrackingDeviceId(event);
-    if (!deviceId) return;
-    if (!isMobileTrackingDevice(deviceId)) return;
-
-    const payload = event && typeof event.payload === 'object' ? event.payload : {};
-    const nested = payload && typeof payload.payload === 'object' ? payload.payload : null;
-    const source = payload.latitude != null || payload.longitude != null
-      ? payload
-      : (nested && (nested.latitude != null || nested.longitude != null) ? nested : event);
-
-    const lat = toNum(source.latitude != null ? source.latitude : source.lat);
-    const lon = toNum(source.longitude != null ? source.longitude : source.lng);
-    if (lat == null || lon == null) return;
+    if (!trackingMap) return null;
+    if (trackingVisuals.has(deviceId)) return trackingVisuals.get(deviceId);
 
     const color = getDeviceColor(deviceId);
-    let layer = deviceLayers.get(deviceId);
-    if (!layer) {
-      const icon = buildDeviceIcon(color, false);
-      const marker = L.marker([lat, lon], { icon }).addTo(trackingMap);
-      const routeLine = L.polyline([], { color, weight: 3, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }).addTo(trackingMap);
-      layer = { marker, routeLine, routePoints: [], color, waiting: false, lastLat: lat, lastLon: lon, lastUpdate: source.timestamp || event.received_at || Date.now() };
-      deviceLayers.set(deviceId, layer);
-    } else if (layer.waiting) {
-      layer.marker.setIcon(buildDeviceIcon(layer.color || color, false));
-      layer.waiting = false;
-    }
+    const marker = L.marker(TRACKING_MANILA_CENTER, {
+      icon: buildDeviceIcon(color, true, false),
+      opacity: 0,
+    }).addTo(trackingMap);
+    const routeLine = L.polyline([], {
+      color,
+      weight: 3,
+      opacity: 0.85,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(trackingMap);
 
-    layer.lastLat = lat;
-    layer.lastLon = lon;
-    layer.lastUpdate = source.timestamp || event.received_at || Date.now();
-    layer.routePoints.push([lat, lon]);
-    layer.marker.setLatLng([lat, lon]);
-    layer.routeLine.setLatLngs(layer.routePoints);
-    layer.marker.bindTooltip(`${deviceId}`, { direction: 'top', offset: [0, -12] });
-
-    const mobileCoordsEl = document.getElementById('mobileGpsCoords');
-    if (mobileCoordsEl) mobileCoordsEl.textContent = `${deviceLayers.size} active mobile device(s)`;
-
-    updateTrackingCoordsRows();
-    fitMapToAllTrackingDevices();
+    const visual = { marker, routeLine, color };
+    trackingVisuals.set(deviceId, visual);
+    return visual;
   }
 
-  function removeDeviceLocationLayer(deviceId) {
+  function updateTrackingVisual(deviceId) {
     const trackingMap = getTrackingMap();
-    const target = String(deviceId || '').trim();
-    if (!target) return;
-    const layer = deviceLayers.get(target);
-    if (!layer) return;
-    if (layer.marker && trackingMap) trackingMap.removeLayer(layer.marker);
-    if (layer.routeLine && trackingMap) trackingMap.removeLayer(layer.routeLine);
-    deviceLayers.delete(target);
-    const mobileCoordsEl = document.getElementById('mobileGpsCoords');
-    if (mobileCoordsEl && deviceLayers.size === 0) mobileCoordsEl.textContent = 'No active mobile tracking';
-    updateTrackingCoordsRows();
-    fitMapToAllTrackingDevices();
+    if (!trackingMap) return;
+
+    const device = trackingDevices.get(deviceId);
+    if (!device) return;
+
+    const visual = ensureTrackingVisual(deviceId);
+    if (!visual) return;
+
+    const loc = device.last_location;
+    const hasLocation = loc && Number.isFinite(Number(loc.latitude)) && Number.isFinite(Number(loc.longitude));
+    if (!hasLocation) {
+      visual.marker.setOpacity(0);
+      visual.routeLine.setLatLngs([]);
+      return;
+    }
+
+    const lat = Number(loc.latitude);
+    const lon = Number(loc.longitude);
+    const isOnline = device.status === 'online';
+    const isSelected = selectedTrackingDeviceId === deviceId;
+
+    visual.marker.setOpacity(1);
+    visual.marker.setIcon(buildDeviceIcon(visual.color, !isOnline, isSelected));
+    visual.marker.setLatLng([lat, lon]);
+    visual.marker.bindTooltip(`${deviceId} (${isOnline ? 'online' : 'offline'})`, { direction: 'top', offset: [0, -12] });
+
+    const routeLatLngs = Array.isArray(device.route_points)
+      ? device.route_points
+        .filter((point) => Number.isFinite(Number(point.latitude)) && Number.isFinite(Number(point.longitude)))
+        .map((point) => [Number(point.latitude), Number(point.longitude)])
+      : [];
+
+    visual.routeLine.setLatLngs(routeLatLngs);
+    visual.routeLine.setStyle({
+      color: isOnline ? visual.color : OFFLINE_MARKER_COLOR,
+      opacity: isOnline ? 0.88 : 0.18,
+      weight: isSelected ? 4 : 3,
+    });
+  }
+
+  function refreshTrackingVisuals() {
+    for (const deviceId of trackingDevices.keys()) {
+      updateTrackingVisual(deviceId);
+    }
+  }
+
+  function fitMapToOnlineDevices(force = false) {
+    const trackingMap = getTrackingMap();
+    if (!trackingMap) return;
+
+    const points = Array.from(trackingDevices.values())
+      .filter((device) => device.status === 'online' && device.last_location)
+      .map((device) => {
+        const lat = toNum(device.last_location.latitude);
+        const lon = toNum(device.last_location.longitude);
+        if (lat == null || lon == null) return null;
+        return [lat, lon];
+      })
+      .filter(Boolean);
+
+    if (!points.length) return;
+    if (points.length === 1) {
+      trackingMap.setView(points[0], Math.max(trackingMap.getZoom(), 14), { animate: true });
+      return;
+    }
+
+    if (force) {
+      trackingMap.fitBounds(L.latLngBounds(points), { padding: [34, 34], maxZoom: 15, animate: true });
+      return;
+    }
+
+    trackingMap.fitBounds(L.latLngBounds(points), { padding: [34, 34], maxZoom: 15, animate: true });
+  }
+
+  function renderTrackingSummary() {
+    const total = trackingDevices.size;
+    const online = Array.from(trackingDevices.values()).filter((device) => device.status === 'online').length;
+
+    if (mobileTrackingStatusEl) {
+      if (!total) {
+        mobileTrackingStatusEl.textContent = 'Waiting for device presence updates...';
+      } else {
+        mobileTrackingStatusEl.textContent = `${online} online / ${total} total device${total === 1 ? '' : 's'}`;
+      }
+    }
+
+    if (mobileGpsCoordsEl) {
+      if (!total) {
+        mobileGpsCoordsEl.textContent = 'No active mobile tracking';
+      } else {
+        mobileGpsCoordsEl.textContent = `${online} online device${online === 1 ? '' : 's'} • ${total} seen`;
+      }
+    }
+  }
+
+  function renderTrackingCards() {
+    if (!trackingCardsEl) return;
+
+    const devices = Array.from(trackingDevices.values()).sort((a, b) => {
+      if (a.status !== b.status) {
+        return a.status === 'online' ? -1 : 1;
+      }
+      const aTs = new Date(a.last_seen || 0).getTime();
+      const bTs = new Date(b.last_seen || 0).getTime();
+      return bTs - aTs;
+    });
+
+    if (!devices.length) {
+      trackingCardsEl.innerHTML = '<div class="tracking-device-empty">No devices seen yet. Device cards appear automatically when mobile apps connect.</div>';
+      return;
+    }
+
+    trackingCardsEl.innerHTML = devices.map((device) => {
+      const isOnline = device.status === 'online';
+      const isSelected = selectedTrackingDeviceId === device.device_id;
+      const lastLoc = device.last_location;
+      const hasLoc = lastLoc && Number.isFinite(Number(lastLoc.latitude)) && Number.isFinite(Number(lastLoc.longitude));
+      const coordsText = hasLoc
+        ? `${Number(lastLoc.latitude).toFixed(5)}, ${Number(lastLoc.longitude).toFixed(5)}`
+        : 'No coordinates yet';
+      const statusText = isOnline
+        ? 'online'
+        : `offline - ${formatRelativeTime(device.last_seen || device.disconnected_at)}`;
+      const recentMessages = Array.isArray(device.message_log) ? device.message_log.slice(-4).reverse() : [];
+
+      return `<div class="tracking-device-card ${isOnline ? 'is-online' : 'is-offline'} ${isSelected ? 'is-selected' : ''}" data-device-id="${escapeHtml(device.device_id)}">
+        <div class="tracking-device-top">
+          <div class="tracking-device-id" title="${escapeHtml(device.device_id)}">${escapeHtml(shortDeviceId(device.device_id))}</div>
+          <div class="tracking-status-wrap"><span class="tracking-status-dot ${isOnline ? 'online' : 'offline'}"></span><span>${escapeHtml(statusText)}</span></div>
+        </div>
+        <div class="tracking-device-meta">
+          <div>Connected: ${escapeHtml(device.connected_at ? fmtTime(device.connected_at) : '-')}</div>
+          <div>Last seen: ${escapeHtml(device.last_seen ? formatRelativeTime(device.last_seen) : '-')}</div>
+          <div>Coords: ${escapeHtml(coordsText)}</div>
+        </div>
+        <div class="tracking-device-actions">
+          <button type="button" class="tracking-action-btn" data-device-id="${escapeHtml(device.device_id)}" data-action="snapshot" ${isOnline ? '' : 'disabled'}>Take Snapshot</button>
+          <button type="button" class="tracking-action-btn" data-device-id="${escapeHtml(device.device_id)}" data-action="get_gps" ${isOnline ? '' : 'disabled'}>Get GPS</button>
+          <button type="button" class="tracking-action-btn" data-device-id="${escapeHtml(device.device_id)}" data-action="camera_on" ${isOnline ? '' : 'disabled'}>Cam On</button>
+          <button type="button" class="tracking-action-btn" data-device-id="${escapeHtml(device.device_id)}" data-action="camera_off" ${isOnline ? '' : 'disabled'}>Cam Off</button>
+        </div>
+        ${isSelected ? `<div class="tracking-device-meta" style="margin-top:8px;border-top:1px dashed rgba(159,189,222,.25);padding-top:6px;">
+          ${recentMessages.length
+            ? recentMessages.map((entry) => `<div>[${escapeHtml(fmtTime(entry.timestamp))}] ${escapeHtml(entry.action || '-')}</div>`).join('')
+            : '<div>No recent messages</div>'}
+        </div>` : ''}
+      </div>`;
+    }).join('');
+
+    trackingCardsEl.querySelectorAll('.tracking-device-card').forEach((cardEl) => {
+      cardEl.addEventListener('click', () => {
+        const deviceId = String(cardEl.getAttribute('data-device-id') || '').trim();
+        if (!deviceId) return;
+        selectedTrackingDeviceId = deviceId;
+        renderTrackingCards();
+        refreshTrackingVisuals();
+
+        const visual = trackingVisuals.get(deviceId);
+        if (visual && visual.marker && visual.marker.getOpacity() > 0) {
+          const trackingMap = getTrackingMap();
+          if (trackingMap) {
+            trackingMap.setView(visual.marker.getLatLng(), Math.max(trackingMap.getZoom(), 15), { animate: true });
+          }
+        }
+      });
+    });
+
+    trackingCardsEl.querySelectorAll('.tracking-action-btn').forEach((btn) => {
+      btn.addEventListener('click', (evt) => {
+        evt.stopPropagation();
+        const deviceId = String(btn.getAttribute('data-device-id') || '').trim();
+        const action = String(btn.getAttribute('data-action') || '').trim();
+        void sendTrackingCommand(deviceId, action);
+      });
+    });
+  }
+
+  function initializeTrackingPanelUi() {
+    if (trackingUiInitialized) return;
+    trackingUiInitialized = true;
+
+    const trackingMap = getTrackingMap();
+    if (trackingMap) {
+      trackingMap.setView(TRACKING_MANILA_CENTER, 12);
+    }
+
+    if (trackingLogToggleEl && trackingLogPanelEl) {
+      trackingLogToggleEl.addEventListener('click', () => {
+        const collapsed = trackingLogPanelEl.classList.toggle('is-collapsed');
+        trackingLogToggleEl.setAttribute('aria-expanded', String(!collapsed));
+        if (trackingLogToggleIconEl) {
+          trackingLogToggleIconEl.innerHTML = collapsed ? '&#9662;' : '&#9652;';
+        }
+      });
+    }
+
+    renderTrackingSummary();
+    renderTrackingCards();
+    renderTrackingMessageLog();
+    renderTrackingRequestBanners();
+  }
+
+  function updateTrackingDeviceFromLocation(deviceId, location, payload = {}) {
+    if (!location) return;
+    const state = ensureTrackingDeviceState(deviceId);
+    if (!state) return;
+
+    state.status = 'online';
+    state.connected_at = state.connected_at || normalizeIsoTime(payload.connected_at, location.timestamp || new Date().toISOString());
+    state.disconnected_at = null;
+    state.last_seen = normalizeIsoTime(location.timestamp, new Date().toISOString());
+    state.last_location = {
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+      timestamp: normalizeIsoTime(location.timestamp, new Date().toISOString()),
+    };
+
+    if (!Array.isArray(state.route_points)) state.route_points = [];
+    state.route_points.push({
+      latitude: Number(location.latitude),
+      longitude: Number(location.longitude),
+      timestamp: state.last_location.timestamp,
+      ts: Number(location.ts || Date.now()),
+    });
+
+    while (state.route_points.length > 2000) {
+      state.route_points.shift();
+    }
+  }
+
+  function mergeDeviceSnapshot(deviceId, snapshot = {}) {
+    const state = ensureTrackingDeviceState(deviceId);
+    if (!state) return null;
+
+    state.status = snapshot.status === 'online' ? 'online' : (snapshot.status === 'offline' ? 'offline' : state.status);
+    state.connected_at = normalizeIsoTime(snapshot.connected_at, state.connected_at);
+    state.disconnected_at = normalizeIsoTime(snapshot.disconnected_at, state.disconnected_at);
+    state.last_seen = normalizeIsoTime(snapshot.last_seen, state.last_seen);
+
+    if (snapshot.last_location && typeof snapshot.last_location === 'object') {
+      const lat = toNum(snapshot.last_location.latitude);
+      const lon = toNum(snapshot.last_location.longitude);
+      if (lat != null && lon != null) {
+        state.last_location = {
+          latitude: lat,
+          longitude: lon,
+          timestamp: normalizeIsoTime(snapshot.last_location.timestamp, state.last_location?.timestamp || new Date().toISOString()),
+        };
+      }
+    }
+
+    const routePoints = Array.isArray(snapshot.route_points)
+      ? snapshot.route_points
+      : (Array.isArray(snapshot.routePoints) ? snapshot.routePoints : null);
+    if (routePoints) {
+      state.route_points = routePoints
+        .map((point) => ({
+          latitude: toNum(point.latitude),
+          longitude: toNum(point.longitude),
+          timestamp: normalizeIsoTime(point.timestamp, new Date().toISOString()),
+          ts: Number(point.ts || Date.now()),
+        }))
+        .filter((point) => point.latitude != null && point.longitude != null);
+      while (state.route_points.length > 2000) state.route_points.shift();
+    }
+
+    if (Array.isArray(snapshot.message_log)) {
+      state.message_log = snapshot.message_log.slice(-50);
+    }
+
+    return state;
+  }
+
+  function applyTrackingDevicesUpdate(data) {
+    if (!data || typeof data !== 'object') return;
+
+    const payload = data.devices && typeof data.devices === 'object' ? data.devices : data;
+    const entries = Array.isArray(payload)
+      ? payload.map((item) => [String(item?.device_id || '').trim(), item])
+      : Object.entries(payload);
+
+    entries.forEach(([deviceId, snapshot]) => {
+      if (!deviceId || !snapshot || typeof snapshot !== 'object') return;
+      mergeDeviceSnapshot(deviceId, snapshot);
+    });
+
+    if (Array.isArray(data.message_log)) {
+      applyTrackingMessageLog({ entries: data.message_log });
+    }
+
+    renderTrackingSummary();
+    renderTrackingCards();
+    refreshTrackingVisuals();
+    fitMapToOnlineDevices();
+  }
+
+  function applyDeviceLifecycle(action, deviceId, payload = {}) {
+    const state = ensureTrackingDeviceState(deviceId);
+    if (!state) return;
+
+    if (action === 'device_online') {
+      state.status = 'online';
+      state.connected_at = state.connected_at || normalizeIsoTime(payload.connected_at, new Date().toISOString());
+      state.disconnected_at = null;
+      state.last_seen = normalizeIsoTime(payload.connected_at, new Date().toISOString());
+      return;
+    }
+
+    if (action === 'device_offline' || action === 'tracking_session_end' || action === 'tracking_rejected') {
+      const disconnectedAt = normalizeIsoTime(payload.disconnected_at || payload.denied_at, new Date().toISOString());
+      state.status = 'offline';
+      state.disconnected_at = disconnectedAt;
+      state.last_seen = disconnectedAt;
+    }
+  }
+
+  function handleCommandLifecycleEvent(sourceType, data = {}) {
+    const deviceId = String(data?.device_id || '').trim();
+    if (!deviceId) return;
+
+    const actionName = String(data?.action || 'unknown').trim().toLowerCase();
+
+    // Suppress transport-level accepted noise in UI logs.
+    if (sourceType === 'command_accepted') {
+      return;
+    }
+
+    if (sourceType === 'command_queued') {
+      if (queuedLifecycleLoggedDevices.has(deviceId)) {
+        return;
+      }
+      queuedLifecycleLoggedDevices.add(deviceId);
+    }
+
+    if (sourceType === 'command_response') {
+      queuedLifecycleLoggedDevices.delete(deviceId);
+    }
+
+    const entry = {
+      timestamp: new Date().toISOString(),
+      device_id: deviceId,
+      action: `${sourceType}:${actionName}`,
+      payload: data,
+      status: String(data?.status || '').trim().toLowerCase(),
+      level: data?.status === 'error' ? 'error' : 'info',
+    };
+    appendTrackingMessage(entry);
+
+    const state = ensureTrackingDeviceState(deviceId);
+    if (state) {
+      state.message_log.push(entry);
+      while (state.message_log.length > 50) state.message_log.shift();
+      state.last_seen = normalizeIsoTime(new Date().toISOString(), state.last_seen || new Date().toISOString());
+    }
+
+    renderTrackingCards();
+    renderTrackingMessageLog();
+
+    if (sourceType === 'command_response' && actionName === 'tracking_approved') {
+      handleBackendDeviceEvent({ type: 'device_event', action: 'tracking_approved', ...data });
+    }
+    if (sourceType === 'command_response' && actionName === 'tracking_rejected') {
+      handleBackendDeviceEvent({ type: 'device_event', action: 'tracking_rejected', ...data });
+    }
+  }
+
+  async function sendTrackingCommand(deviceId, buttonAction) {
+    const targetDeviceId = String(deviceId || '').trim();
+    if (!targetDeviceId) return;
+
+    const state = trackingDevices.get(targetDeviceId);
+    if (!state || state.status !== 'online') {
+      setTrackingHint(`Device ${shortDeviceId(targetDeviceId)} is offline`, true);
+      return;
+    }
+
+    const command = (() => {
+      if (buttonAction === 'snapshot') return { action: 'take_photo', payload: {} };
+      if (buttonAction === 'get_gps') return { action: 'get_gps', payload: {} };
+      if (buttonAction === 'camera_on') return { action: 'camera_on', payload: {} };
+      if (buttonAction === 'camera_off') return { action: 'camera_off', payload: {} };
+      return null;
+    })();
+
+    if (!command) return;
+
+    try {
+      if (window.trackingBridge && typeof window.trackingBridge.sendCommand === 'function') {
+        await window.trackingBridge.sendCommand(targetDeviceId, command.action, command.payload);
+      } else {
+        await api.sendCommand(command.action, command.payload, targetDeviceId);
+      }
+      setTrackingHint(`Command sent: ${command.action} -> ${shortDeviceId(targetDeviceId)}`);
+    } catch (err) {
+      setTrackingHint(`Command failed for ${shortDeviceId(targetDeviceId)}: ${err.message || 'Unknown error'}`, true);
+    }
   }
 
   function handleBackendDeviceEvent(event) {
     if (!event || typeof event !== 'object') return;
+
     const action = getTrackingAction(event);
     const deviceId = getTrackingDeviceId(event);
     if (!action || !deviceId) return;
     if (!isMobileTrackingDevice(deviceId)) return;
 
+    const payload = getTrackingPayload(event);
+    if (shouldSkipTrackingEvent(action, deviceId, payload)) return;
+
+    initializeTrackingPanelUi();
+    const state = ensureTrackingDeviceState(deviceId);
+    if (!state) return;
+
     if (action === 'tracking_request') {
-      const payload = event && typeof event.payload === 'object' ? event.payload : {};
-      pendingTrackingRequests.set(deviceId, {
+      trackingPendingRequests.set(deviceId, {
         device_id: deviceId,
         requested_at: payload?.payload?.requested_at || payload?.requested_at || new Date().toISOString(),
       });
       renderTrackingRequestBanners();
-      return;
+    }
+
+    if (action === 'tracking_approved') {
+      state.status = 'online';
+      state.connected_at = state.connected_at || new Date().toISOString();
+      state.last_seen = new Date().toISOString();
+      trackingPendingRequests.delete(deviceId);
+      renderTrackingRequestBanners();
+    }
+
+    if (action === 'tracking_rejected') {
+      applyDeviceLifecycle(action, deviceId, payload);
+      trackingPendingRequests.delete(deviceId);
+      renderTrackingRequestBanners();
+    }
+
+    if (action === 'device_online' || action === 'device_offline' || action === 'tracking_session_end') {
+      applyDeviceLifecycle(action, deviceId, payload);
+      if (action === 'device_online') {
+        queuedLifecycleLoggedDevices.delete(deviceId);
+      }
     }
 
     if (action === 'location_update') {
-      upsertDeviceLocationLayer(event);
-      return;
+      queuedLifecycleLoggedDevices.delete(deviceId);
+      const location = getLocationFromEvent(event);
+      if (location) {
+        updateTrackingDeviceFromLocation(deviceId, location, payload);
+      }
     }
 
-    if (action === 'tracking_session_end') {
-      pendingTrackingRequests.delete(deviceId);
-      renderTrackingRequestBanners();
-      removeDeviceLocationLayer(deviceId);
+    const entry = {
+      timestamp: normalizeIsoTime(payload.timestamp || payload.connected_at || payload.disconnected_at, new Date().toISOString()),
+      device_id: deviceId,
+      action,
+      payload,
+    };
+    appendTrackingMessage(entry);
+    state.message_log.push(entry);
+    while (state.message_log.length > 50) state.message_log.shift();
+
+    renderTrackingSummary();
+    renderTrackingCards();
+    renderTrackingMessageLog();
+    refreshTrackingVisuals();
+
+    if (action === 'location_update' || action === 'device_online') {
+      fitMapToOnlineDevices();
     }
   }
+
+  initializeTrackingPanelUi();
 
   // --- reverse geocoding (Nominatim, cached) ---
   const _geocodeCache = new Map();
@@ -1525,6 +2093,45 @@
     cameraActionIndicator.textContent = message;
   }
 
+  function collapseExpandedCameraCard(silent = false) {
+    expandedCameraIndex = null;
+    if (!cameraGrid) return;
+
+    cameraGrid.classList.remove('has-expanded');
+    cameraGrid.querySelectorAll('.cam-cell[data-camera-index]').forEach((card) => {
+      card.classList.remove('is-expanded');
+      card.setAttribute('aria-expanded', 'false');
+    });
+
+    if (!silent) {
+      setCameraActionIndicator('Camera view minimized to equal tiles.');
+    }
+  }
+
+  function toggleCameraCardExpansion(card) {
+    if (!cameraGrid || !card) return;
+
+    const cameraIndex = String(card.getAttribute('data-camera-index') || '').trim();
+    if (!cameraIndex) return;
+
+    const shouldCollapse = expandedCameraIndex === cameraIndex && card.classList.contains('is-expanded');
+    if (shouldCollapse) {
+      collapseExpandedCameraCard(true);
+      setCameraActionIndicator(`${getCameraTargetLabel(cameraIndex)} minimized. Click any tile to expand.`);
+      return;
+    }
+
+    expandedCameraIndex = cameraIndex;
+    cameraGrid.classList.add('has-expanded');
+    cameraGrid.querySelectorAll('.cam-cell[data-camera-index]').forEach((item) => {
+      const isExpanded = item === card;
+      item.classList.toggle('is-expanded', isExpanded);
+      item.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+    });
+
+    setCameraActionIndicator(`${getCameraTargetLabel(cameraIndex)} expanded. Click again to minimize.`);
+  }
+
   function flashCameraAction(btn) {
     if (!btn) return;
     btn.classList.add('active');
@@ -1729,14 +2336,19 @@
 
   function attachCameraMediaHandlers() {
     if (!cameraGrid) return;
-    cameraGrid.querySelectorAll('[data-camera-index]').forEach((card) => {
+    cameraGrid.querySelectorAll('.cam-cell[data-camera-index]').forEach((card) => {
       const idx = card.getAttribute('data-camera-index');
       const img = card.querySelector('.cam-feed-media');
       const placeholder = card.querySelector('.cam-placeholder');
 
       card.addEventListener('click', () => {
-        if (!idx || !lastBase) return;
-        window.open(`${lastBase}/camera/${idx}/snapshot.jpg?t=${Date.now()}`, '_blank', 'noopener');
+        toggleCameraCardExpansion(card);
+      });
+
+      card.addEventListener('keydown', (evt) => {
+        if (evt.key !== 'Enter' && evt.key !== ' ') return;
+        evt.preventDefault();
+        toggleCameraCardExpansion(card);
       });
 
       card.addEventListener('contextmenu', (evt) => {
@@ -1794,13 +2406,15 @@
     const slots = Array.from({ length: 4 }, (_, idx) => cameras[idx] || null);
 
     cameraGrid.innerHTML = slots.map((camera, idx) => {
-      const featuredClass = idx === 0 ? ' featured' : '';
+      const cardIndex = camera ? String(camera.index) : String(idx + 1);
+      const isExpanded = expandedCameraIndex === cardIndex;
+      const expandedClass = isExpanded ? ' is-expanded' : '';
       if (!camera) {
         return `
-          <div class="cam-cell is-offline${featuredClass}" data-camera-index="${idx + 1}">
+          <div class="cam-cell is-offline${expandedClass}" data-camera-index="${escapeHtml(cardIndex)}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" aria-label="Toggle ${escapeHtml(cameraTitle(camera, idx))}">
             <div class="cam-feed">
               <div class="cam-placeholder">
-                <svg width="${idx === 0 ? 80 : 50}" height="${idx === 0 ? 80 : 50}" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+                <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
                   <path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2"></rect>
                 </svg>
                 <div>No signal</div>
@@ -1821,11 +2435,11 @@
       }
 
       return `
-        <div class="cam-cell${featuredClass}" data-camera-index="${escapeHtml(camera.index)}">
+        <div class="cam-cell${expandedClass}" data-camera-index="${escapeHtml(cardIndex)}" role="button" tabindex="0" aria-expanded="${isExpanded ? 'true' : 'false'}" aria-label="Toggle ${escapeHtml(cameraTitle(camera, idx))}">
           <div class="cam-feed">
             <img class="cam-feed-media" alt="${escapeHtml(cameraTitle(camera, idx))}" hidden>
             <div class="cam-placeholder">
-              <svg width="${idx === 0 ? 80 : 50}" height="${idx === 0 ? 80 : 50}" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
+              <svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="#00c8ff" stroke-width="1">
                 <path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2"></rect>
               </svg>
               <div>${escapeHtml(cameraMeta(camera))}</div>
@@ -1843,6 +2457,18 @@
         </div>
       `;
     }).join('');
+
+    if (expandedCameraIndex) {
+      const expandedCard = cameraGrid.querySelector(`.cam-cell[data-camera-index="${expandedCameraIndex}"]`);
+      if (expandedCard) {
+        cameraGrid.classList.add('has-expanded');
+      } else {
+        expandedCameraIndex = null;
+        cameraGrid.classList.remove('has-expanded');
+      }
+    } else {
+      cameraGrid.classList.remove('has-expanded');
+    }
 
     attachCameraMediaHandlers();
     syncCameraMedia();
@@ -2122,11 +2748,8 @@
         piCarMarker.setTooltipContent(`Last seen: ${lastOnlineAgo}`);
       }
 
-      // pan map to Pi position
-      const follow = document.getElementById('btnFollow');
-      if (!follow || follow.classList.contains('active')) {
-        map.setView([lat, lon], Math.max(map.getZoom(), 15), { animate: true });
-      }
+      // Keep the map where the user panned it.
+      // Re-centering is now manual via the Center button (window.centerOnTracker).
     }
 
     // --- coords display at bottom of map ---

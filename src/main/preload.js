@@ -250,6 +250,75 @@ contextBridge.exposeInMainWorld('backendBridge', {
   },
 });
 
+const TRACKING_RECEIVE_CHANNELS = new Set([
+  'tracking:device_online',
+  'tracking:device_offline',
+  'tracking:location',
+  'tracking:devices_update',
+  'tracking:message_log',
+  // Compatibility channels for legacy tracking approval flow.
+  'tracking:request',
+  'tracking:session_end',
+  'tracking:approved',
+  'tracking:rejected',
+]);
+
+const trackingEventListeners = new Map();
+
+function addTrackingListener(channel, callback) {
+  if (!TRACKING_RECEIVE_CHANNELS.has(channel)) {
+    throw new Error(`Unsupported tracking channel: ${channel}`);
+  }
+  if (typeof callback !== 'function') {
+    throw new Error('Tracking callback must be a function');
+  }
+
+  const wrapped = (_event, data) => {
+    try {
+      callback(data);
+    } catch (err) {
+      console.error('[TrackingBridge] Event handler error:', err);
+    }
+  };
+
+  ipcRenderer.on(channel, wrapped);
+
+  if (!trackingEventListeners.has(channel)) {
+    trackingEventListeners.set(channel, new Map());
+  }
+  trackingEventListeners.get(channel).set(callback, wrapped);
+}
+
+function removeTrackingListener(channel, callback) {
+  const listenersForChannel = trackingEventListeners.get(channel);
+  if (!listenersForChannel) return;
+  const wrapped = listenersForChannel.get(callback);
+  if (!wrapped) return;
+
+  ipcRenderer.removeListener(channel, wrapped);
+  listenersForChannel.delete(callback);
+  if (!listenersForChannel.size) {
+    trackingEventListeners.delete(channel);
+  }
+}
+
+contextBridge.exposeInMainWorld('trackingBridge', {
+  on: (channel, callback) => addTrackingListener(channel, callback),
+  off: (channel, callback) => removeTrackingListener(channel, callback),
+
+  onDeviceOnline: (callback) => addTrackingListener('tracking:device_online', callback),
+  onDeviceOffline: (callback) => addTrackingListener('tracking:device_offline', callback),
+  onLocation: (callback) => addTrackingListener('tracking:location', callback),
+  onDevicesUpdate: (callback) => addTrackingListener('tracking:devices_update', callback),
+  onMessageLog: (callback) => addTrackingListener('tracking:message_log', callback),
+
+  approve: (deviceId, payload = {}) => unwrapResponse(ipcRenderer.invoke('tracking:approve', deviceId, payload)),
+  reject: (deviceId, payload = {}) => unwrapResponse(ipcRenderer.invoke('tracking:reject', deviceId, payload)),
+  sendCommand: (deviceId, action, payload = {}) =>
+    unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
+  getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
+});
+
 contextBridge.exposeInMainWorld('electronAPI', {
   on: (channel, cb) => ipcRenderer.on(channel, cb),
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),

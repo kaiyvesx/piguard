@@ -4,7 +4,6 @@ const WebSocket = require('ws');
 const EventEmitter = require('events');
 const config = require('./backend.config');
 const { getPreferredDeviceId, shouldAutoDetectTarget } = require('./adb');
-const { executeAdbFallback } = require('./adb-fallback');
 
 let trackingHandler;
 try {
@@ -50,10 +49,7 @@ class AdminWebSocketClient extends EventEmitter {
     this._reconnectAttempts = 0;
     this._maxReconnectAttempts = 5;
     this._baseReconnectDelay = config.reconnectDelay;
-    this._adbTrackingTimer = null;
-    this._adbTrackingActiveDeviceId = null;
-    this._adbTrackingEmittedRequest = false;
-    this._adbTrackingIntervalMs = Number(process.env.ADB_TRACK_INTERVAL_MS || 5000);
+    this._offlineLoggedDevices = new Set();
   }
 
   /**
@@ -149,6 +145,7 @@ class AdminWebSocketClient extends EventEmitter {
     const type = msg.type;
 
     if (type === 'device_event' || type === 'tracking_request' || type === 'location_update' || type === 'tracking_session_end') {
+      this._refreshOfflineLogState(msg);
       trackingHandler.handle(msg, this);
       this.emit('device_event', msg);
       return;
@@ -161,7 +158,6 @@ class AdminWebSocketClient extends EventEmitter {
       this._authenticated = true;
       this._reconnectAttempts = 0; // Reset on successful connection
       this._startPing();
-      this._startAdbTracking();
       this.emit('connected');
       if (connectResolve) connectResolve();
       return;
@@ -174,18 +170,18 @@ class AdminWebSocketClient extends EventEmitter {
 
     // Handle command accepted acknowledgement
     if (type === 'accepted') {
-      console.log('[AdminWS] Command accepted:', msg.request_id);
       this.emit('command_accepted', msg);
       return;
     }
 
     // Handle command queued (device offline)
     if (type === 'command_queued') {
-      console.log('[AdminWS] Command queued (device offline):', msg.request_id);
+      this._logOfflineDevice(msg.device_id);
       const pending = this._pendingRequests.get(msg.request_id);
       if (pending) {
-        // Try a local ADB fallback so USB-only mode can still return useful data.
-        this._tryResolveWithAdbFallback(msg, pending);
+        clearTimeout(pending.timeout);
+        this._pendingRequests.delete(msg.request_id);
+        pending.reject(new Error(`${this._normalizeOfflineDeviceLabel(msg.device_id)} is offline`));
       }
       this.emit('command_queued', msg);
       return;
@@ -193,7 +189,7 @@ class AdminWebSocketClient extends EventEmitter {
 
     // Handle command response from device
     if (type === 'command_response') {
-      console.log('[AdminWS] Command response:', msg.request_id, msg.status);
+      this._clearOfflineLogForDevice(msg?.device_id);
       const pending = this._pendingRequests.get(msg.request_id);
       if (pending) {
         clearTimeout(pending.timeout);
@@ -220,6 +216,51 @@ class AdminWebSocketClient extends EventEmitter {
     console.log('[AdminWS] Unknown message type:', type, msg);
   }
 
+  _normalizeOfflineDeviceLabel(deviceId) {
+    const raw = String(deviceId || '').trim();
+    if (!raw) return 'mobile-01';
+    const compact = raw.toLowerCase();
+    if (compact.includes('mobile')) return raw;
+    if (compact === '13e1b5b146eba495') return 'mobile-01';
+    return raw;
+  }
+
+  _normalizeEventAction(msg) {
+    const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
+    return String(msg?.action || msg?.event || payload?.action || payload?.type || msg?.type || '')
+      .trim()
+      .toLowerCase();
+  }
+
+  _normalizeEventDeviceId(msg) {
+    const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
+    return String(msg?.device_id || payload?.device_id || '')
+      .trim();
+  }
+
+  _clearOfflineLogForDevice(deviceId) {
+    const label = this._normalizeOfflineDeviceLabel(deviceId);
+    this._offlineLoggedDevices.delete(label);
+  }
+
+  _refreshOfflineLogState(msg) {
+    const deviceId = this._normalizeEventDeviceId(msg);
+    if (!deviceId) return;
+
+    const action = this._normalizeEventAction(msg);
+    // Once we see the device sending events again, allow a future offline log once.
+    if (action === 'device_online' || action === 'location_update') {
+      this._clearOfflineLogForDevice(deviceId);
+    }
+  }
+
+  _logOfflineDevice(deviceId) {
+    const label = this._normalizeOfflineDeviceLabel(deviceId);
+    if (this._offlineLoggedDevices.has(label)) return;
+    this._offlineLoggedDevices.add(label);
+    console.log(`[AdminWS] ${label} is offline`);
+  }
+
   _startPing() {
     this._stopPing();
     this._pingTimer = setInterval(() => {
@@ -238,7 +279,6 @@ class AdminWebSocketClient extends EventEmitter {
 
   _cleanup() {
     this._stopPing();
-    this._stopAdbTracking();
 
     // Reject all pending requests
     for (const [requestId, pending] of this._pendingRequests) {
@@ -275,100 +315,6 @@ class AdminWebSocketClient extends EventEmitter {
         console.error('[AdminWS] Reconnect failed:', err.message);
       });
     }, delay);
-  }
-
-  _startAdbTracking() {
-    this._stopAdbTracking();
-    const intervalMs = Number.isFinite(this._adbTrackingIntervalMs) && this._adbTrackingIntervalMs > 0
-      ? this._adbTrackingIntervalMs
-      : 5000;
-
-    // Poll ADB location for USB-only mode (no mobile ws client).
-    this._adbTrackingTimer = setInterval(() => {
-      this._adbTrackingTick().catch(() => {});
-    }, intervalMs);
-    this._adbTrackingTick().catch(() => {});
-  }
-
-  _stopAdbTracking() {
-    if (this._adbTrackingTimer) {
-      clearInterval(this._adbTrackingTimer);
-      this._adbTrackingTimer = null;
-    }
-    if (this._adbTrackingActiveDeviceId) {
-      this.emit('tracking:session_end', {
-        device_id: this._adbTrackingActiveDeviceId,
-        session: { ended_by: 'adb-tracking-stop' },
-      });
-    }
-    this._adbTrackingActiveDeviceId = null;
-    this._adbTrackingEmittedRequest = false;
-  }
-
-  async _adbTrackingTick() {
-    if (!this._authenticated) return;
-    const deviceId = await getPreferredDeviceId();
-    if (!deviceId) {
-      if (this._adbTrackingActiveDeviceId) {
-        this.emit('tracking:session_end', {
-          device_id: this._adbTrackingActiveDeviceId,
-          session: { ended_by: 'adb-device-disconnected' },
-        });
-      }
-      this._adbTrackingActiveDeviceId = null;
-      this._adbTrackingEmittedRequest = false;
-      return;
-    }
-
-    this._adbTrackingActiveDeviceId = deviceId;
-    if (!this._adbTrackingEmittedRequest) {
-      this._adbTrackingEmittedRequest = true;
-      this.emit('tracking:request', {
-        device_id: deviceId,
-        requested_at: new Date().toISOString(),
-        source: 'adb-live-tracking',
-      });
-    }
-
-    const data = await executeAdbFallback('get_gps', {}, deviceId);
-    if (!data || !Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
-    this.emit('tracking:location', {
-      device_id: deviceId,
-      latitude: data.lat,
-      longitude: data.lng,
-      timestamp: new Date().toISOString(),
-      ts: Date.now(),
-      source: 'adb-live-tracking',
-    });
-  }
-
-  async _tryResolveWithAdbFallback(msg, pending) {
-    const requestId = msg.request_id;
-    try {
-      const data = await executeAdbFallback(msg.action, {}, msg.device_id);
-      clearTimeout(pending.timeout);
-      this._pendingRequests.delete(requestId);
-      if (data == null) {
-        pending.resolve({ queued: true, ...msg });
-        return;
-      }
-      const response = {
-        type: 'command_response',
-        request_id: requestId,
-        device_id: msg.device_id,
-        action: msg.action,
-        status: 'success',
-        data,
-        via: 'adb-fallback',
-      };
-      console.log('[AdminWS] Resolved via ADB fallback:', msg.action, requestId);
-      pending.resolve(response);
-      this.emit('command_response', response);
-    } catch (err) {
-      clearTimeout(pending.timeout);
-      this._pendingRequests.delete(requestId);
-      pending.reject(new Error(`ADB fallback failed: ${err.message}`));
-    }
   }
 
   /**
@@ -410,7 +356,6 @@ class AdminWebSocketClient extends EventEmitter {
         payload,
       };
 
-      console.log('[AdminWS] Sending command:', action, reqId);
       this._ws.send(JSON.stringify(msg));
     });
   }

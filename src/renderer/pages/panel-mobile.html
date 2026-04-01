@@ -1,29 +1,36 @@
 <!-- Mobile Tracking Panel -->
 <div class="panel" id="panel-mobile">
-  <div id="mobile-map" style="position:absolute;inset:0;"></div>
+  <div class="tracking-shell">
+    <aside class="tracking-devices-pane">
+      <div class="tracking-pane-header">
+        <h3 class="tracking-pane-title">Connected Devices</h3>
+        <p class="tracking-pane-subtitle" id="mobileTrackingStatus">Waiting for device presence updates...</p>
+      </div>
+      <div class="tracking-device-cards" id="trackingDeviceCards">
+        <div class="tracking-device-empty">No devices seen yet. Device cards appear automatically when mobile apps connect.</div>
+      </div>
+    </aside>
 
-  <div id="trackingRequestsMobile" style="position:absolute;top:56px;left:16px;z-index:650;display:flex;flex-direction:column;gap:8px;max-width:min(92vw,460px);"></div>
-
-  <div id="mobileTrackingBoard" style="position:absolute;right:18px;bottom:78px;z-index:640;background:rgba(10,22,40,.9);border:1px solid rgba(0,200,255,.25);border-radius:10px;padding:10px 12px;min-width:360px;max-width:min(92vw,560px);">
-    <div style="font-size:.68rem;font-weight:700;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:6px;">Active Mobile Devices</div>
-    <div id="mobileTrackingStatus" style="font-size:.68rem;color:var(--muted);margin-bottom:6px;">No active mobile tracking.</div>
-    <table style="width:100%;border-collapse:collapse;font-size:.72rem;">
-      <thead>
-        <tr style="color:var(--muted);text-align:left;">
-          <th style="padding:4px 6px;">Device ID</th>
-          <th style="padding:4px 6px;">Latitude</th>
-          <th style="padding:4px 6px;">Longitude</th>
-          <th style="padding:4px 6px;">Last update</th>
-        </tr>
-      </thead>
-      <tbody id="trackingDeviceRowsMobile">
-        <tr><td colspan="4" style="padding:6px;color:var(--muted);">No active tracked mobile device.</td></tr>
-      </tbody>
-    </table>
+    <section class="tracking-map-pane">
+      <div id="mobile-map"></div>
+      <div class="tracking-map-badge">
+        <div id="mobileGpsCoords">No active mobile tracking</div>
+        <div id="trackingMapHint">Map centered on Philippines. Live markers update every location event.</div>
+      </div>
+    </section>
   </div>
 
-  <div class="gps-indicator">
-    <div class="dot"></div>
-    <span id="mobileGpsCoords">No active mobile tracking</span>
+  <div class="tracking-log-panel is-collapsed" id="trackingLogPanel">
+    <button class="tracking-log-toggle" id="trackingLogToggle" type="button" aria-expanded="false">
+      <span>Live Message Log</span>
+      <span id="trackingLogToggleIcon">&#9662;</span>
+    </button>
+    <div class="tracking-log-body" id="trackingMessageLog">
+      <div class="tracking-log-empty">No tracking events yet.</div>
+    </div>
   </div>
+
+  <!-- Compatibility placeholders for legacy tracking UI hooks -->
+  <div id="trackingRequestsMobile" class="tracking-compat-hidden"></div>
+  <table class="tracking-compat-hidden"><tbody id="trackingDeviceRowsMobile"></tbody></table>
 </div>
