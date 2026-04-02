@@ -65,53 +65,17 @@ if (mobileMap) mobileMap.setView([12.8797, 121.7740], 6);
 
 // ── Speedometer & ETA (deferred — runs after GPS sidebar partial is injected) ──
 function initGaugeParts() {
-  const circumference = 2 * Math.PI * 27;
-  const gaugeFill   = document.getElementById('gaugeFill');
-  const speedNum    = document.getElementById('speedNum');
+  const gaugeFill = document.getElementById('gaugeFill');
+  const speedNum = document.getElementById('speedNum');
   const speedStatus = document.getElementById('speedStatus');
-  const speeds = [42, 38, 55, 48, 35, 50, 44, 30, 58, 46, 40, 52];
-  let sIdx = 0;
+  if (!gaugeFill || !speedNum || !speedStatus) return;
 
-  function updateSpeed() {
-    const sp = speeds[sIdx++ % speeds.length];
-    gaugeFill.style.strokeDashoffset = circumference * (1 - Math.min(sp / 80, 1));
-    speedNum.textContent = sp;
-    if (sp > 60) {
-      gaugeFill.style.stroke = 'var(--danger)';
-      speedStatus.style.color = 'var(--danger)';
-      speedStatus.textContent = 'Over limit!';
-    } else if (sp > 50) {
-      gaugeFill.style.stroke = 'var(--warning)';
-      speedStatus.style.color = 'var(--warning)';
-      speedStatus.textContent = 'Near limit';
-    } else {
-      gaugeFill.style.stroke = 'var(--primary)';
-      speedStatus.style.color = 'var(--success)';
-      speedStatus.textContent = 'Within limit';
-    }
-  }
-  updateSpeed();
-  setInterval(updateSpeed, 3000);
-
-  let etaMin = 14;
-  setInterval(() => {
-    if (etaMin > 1) {
-      etaMin--;
-      document.getElementById('stat-eta').innerHTML = `${etaMin}<sup style="font-size:.55rem">min</sup>`;
-      document.getElementById('stat-dist').innerHTML = `${(etaMin * 0.59).toFixed(1)}<sup style="font-size:.55rem">km</sup>`;
-    }
-  }, 8000);
-
-  function updateArrival() {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() + etaMin);
-    let h = now.getHours(), m = now.getMinutes();
-    const ampm = h >= 12 ? 'pm' : 'am';
-    h = h % 12 || 12;
-    document.getElementById('stat-arr').innerHTML = `${h}:${String(m).padStart(2,'0')}<sup style="font-size:.55rem">${ampm}</sup>`;
-  }
-  updateArrival();
-  setInterval(updateArrival, 60000);
+  const circumference = 2 * Math.PI * 27;
+  gaugeFill.style.strokeDasharray = String(circumference);
+  gaugeFill.style.strokeDashoffset = String(circumference);
+  speedNum.textContent = '—';
+  speedStatus.textContent = 'Waiting for GPS';
+  speedStatus.style.color = 'var(--muted)';
 }
 
 // ── Map button toggles ──

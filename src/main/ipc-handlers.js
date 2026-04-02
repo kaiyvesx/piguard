@@ -6,6 +6,7 @@ const { listAdbDevices, getPreferredDeviceId } = require('../services/adb');
 
 // Track initialization state
 let isInitialized = false;
+const forwardingCleanupByWebContentsId = new Map();
 
 /**
  * Initialize IPC handlers for backend communication.
@@ -220,65 +221,106 @@ initializeIpcHandlers();
 
 // Set up event forwarding to renderer
 function setupEventForwarding(mainWindow) {
-  if (!mainWindow) return;
+  if (!mainWindow || !mainWindow.webContents) return;
 
   const webContents = mainWindow.webContents;
+  const webContentsId = webContents.id;
 
-  backendApi.on('connected', () => {
-    webContents.send('backend:event', { type: 'connected' });
-  });
+  // did-finish-load can fire repeatedly for the same window; avoid re-subscribing.
+  if (forwardingCleanupByWebContentsId.has(webContentsId)) return;
 
-  backendApi.on('disconnected', (data) => {
-    webContents.send('backend:event', { type: 'disconnected', ...data });
-  });
+  const safeSend = (channel, payload) => {
+    if (webContents.isDestroyed()) return;
+    webContents.send(channel, payload);
+  };
 
-  backendApi.on('command_accepted', (data) => {
-    webContents.send('backend:event', { type: 'command_accepted', ...data });
-  });
+  const onConnected = () => {
+    safeSend('backend:event', { type: 'connected' });
+  };
 
-  backendApi.on('command_queued', (data) => {
-    webContents.send('backend:event', { type: 'command_queued', ...data });
-  });
+  const onDisconnected = (data) => {
+    safeSend('backend:event', { type: 'disconnected', ...data });
+  };
 
-  backendApi.on('command_response', (data) => {
-    webContents.send('backend:event', { type: 'command_response', ...data });
+  const onCommandAccepted = (data) => {
+    safeSend('backend:event', { type: 'command_accepted', ...data });
+  };
+
+  const onCommandQueued = (data) => {
+    safeSend('backend:event', { type: 'command_queued', ...data });
+  };
+
+  const onCommandResponse = (data) => {
+    safeSend('backend:event', { type: 'command_response', ...data });
     if (data && data.action === 'tracking_approved') {
-      webContents.send('tracking:approved', data);
+      safeSend('tracking:approved', data);
     }
     if (data && data.action === 'tracking_rejected') {
-      webContents.send('tracking:rejected', data);
+      safeSend('tracking:rejected', data);
     }
+  };
+
+  const onDeviceEvent = (data) => {
+    safeSend('backend:event', { type: 'device_event', ...data });
+  };
+
+  const onTrackingRequest = (data) => {
+    safeSend('tracking:request', data);
+  };
+
+  const onTrackingLocation = (data) => {
+    safeSend('tracking:location', data);
+  };
+
+  const onTrackingSessionEnd = (data) => {
+    safeSend('tracking:session_end', data);
+  };
+
+  const onTrackingApproved = (data) => {
+    safeSend('tracking:approved', data);
+  };
+
+  const onTrackingRejected = (data) => {
+    safeSend('tracking:rejected', data);
+  };
+
+  const onError = (err) => {
+    safeSend('backend:event', { type: 'error', message: err.message });
+  };
+
+  const subscriptions = [
+    ['connected', onConnected],
+    ['disconnected', onDisconnected],
+    ['command_accepted', onCommandAccepted],
+    ['command_queued', onCommandQueued],
+    ['command_response', onCommandResponse],
+    ['device_event', onDeviceEvent],
+    ['tracking:request', onTrackingRequest],
+    ['tracking:location', onTrackingLocation],
+    ['tracking:session_end', onTrackingSessionEnd],
+    ['tracking:approved', onTrackingApproved],
+    ['tracking:rejected', onTrackingRejected],
+    ['error', onError],
+  ];
+
+  subscriptions.forEach(([eventName, handler]) => {
+    backendApi.on(eventName, handler);
   });
 
-  backendApi.on('device_event', (data) => {
-    webContents.send('backend:event', { type: 'device_event', ...data });
-  });
+  const cleanup = () => {
+    if (!forwardingCleanupByWebContentsId.has(webContentsId)) return;
+    subscriptions.forEach(([eventName, handler]) => {
+      backendApi.off(eventName, handler);
+    });
+    forwardingCleanupByWebContentsId.delete(webContentsId);
+  };
 
-  backendApi.on('tracking:request', (data) => {
-    webContents.send('tracking:request', data);
-  });
+  forwardingCleanupByWebContentsId.set(webContentsId, cleanup);
+  webContents.once('destroyed', cleanup);
+  mainWindow.once('closed', cleanup);
 
-  backendApi.on('tracking:location', (data) => {
-    webContents.send('tracking:location', data);
-  });
-
-  backendApi.on('tracking:session_end', (data) => {
-    webContents.send('tracking:session_end', data);
-  });
-
-  backendApi.on('tracking:approved', (data) => {
-    webContents.send('tracking:approved', data);
-  });
-
-  backendApi.on('tracking:rejected', (data) => {
-    webContents.send('tracking:rejected', data);
-  });
-
-  backendApi.on('error', (err) => {
-    webContents.send('backend:event', { type: 'error', message: err.message });
-  });
-
-  console.log('[IPC] Event forwarding set up');
+  console.log('[IPC] Event forwarding set up for webContents', webContentsId);
+  return;
 }
 
 module.exports = {

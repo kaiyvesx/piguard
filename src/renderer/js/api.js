@@ -1173,6 +1173,36 @@
   // --- reverse geocoding (Nominatim, cached) ---
   const _geocodeCache = new Map();
   const _geocodePendingByKey = new Map();
+  const PH_TIMEZONE = 'Asia/Manila';
+  const MANILA_WEATHER_FALLBACK = { lat: 14.5995, lon: 120.9842 };
+  const WEATHER_REFRESH_MS = 5 * 60 * 1000;
+  const WEATHER_RETRY_MS = 60 * 1000;
+  const phTimeFormatter = new Intl.DateTimeFormat('en-PH', {
+    timeZone: PH_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+  const phDateFormatter = new Intl.DateTimeFormat('en-PH', {
+    timeZone: PH_TIMEZONE,
+    weekday: 'short',
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+  let lastWeatherKey = '';
+  let lastWeatherFetchedAt = 0;
+  let lastWeatherAttemptAt = 0;
+  let lastWeatherSnapshot = null;
+  let weatherPending = null;
+
+  function setTextForIds(ids, text) {
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    });
+  }
 
   async function reverseGeocode(lat, lon) {
     const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
@@ -1201,6 +1231,125 @@
 
     _geocodePendingByKey.set(key, request);
     return request;
+  }
+
+  function updatePhilippinesClock() {
+    const now = new Date();
+    setTextForIds(['gps-ph-time', 'mobile-ph-time'], `PH Time: ${phTimeFormatter.format(now)}`);
+    setTextForIds(['gps-ph-date', 'mobile-ph-date'], `PH Date: ${phDateFormatter.format(now)}`);
+  }
+
+  function getWeatherMeta(code, isDay) {
+    switch (code) {
+      case 0: return { icon: isDay ? '☀️' : '🌙', text: isDay ? 'Clear sky' : 'Clear night' };
+      case 1: return { icon: isDay ? '🌤️' : '🌙', text: 'Mainly clear' };
+      case 2: return { icon: '⛅', text: 'Partly cloudy' };
+      case 3: return { icon: '☁️', text: 'Overcast' };
+      case 45:
+      case 48: return { icon: '🌫️', text: 'Foggy' };
+      case 51:
+      case 53:
+      case 55:
+      case 56:
+      case 57: return { icon: '🌦️', text: 'Drizzle' };
+      case 61:
+      case 63:
+      case 65:
+      case 66:
+      case 67:
+      case 80:
+      case 81:
+      case 82: return { icon: '🌧️', text: 'Rain showers' };
+      case 71:
+      case 73:
+      case 75:
+      case 77:
+      case 85:
+      case 86: return { icon: '❄️', text: 'Snow' };
+      case 95:
+      case 96:
+      case 99: return { icon: '⛈️', text: 'Thunderstorm' };
+      default: return { icon: '⛅', text: 'Weather update' };
+    }
+  }
+
+  function renderWeather(snapshot) {
+    if (!snapshot) {
+      setTextForIds(['gps-weather-desc', 'mobile-weather-desc'], 'Weather unavailable');
+      return;
+    }
+    const meta = getWeatherMeta(snapshot.weatherCode, snapshot.isDay);
+    setTextForIds(['gps-weather-icon', 'mobile-weather-icon'], meta.icon);
+    setTextForIds(['gps-weather-temp', 'mobile-weather-temp'], `${Math.round(snapshot.temperature)}°C`);
+    setTextForIds(['gps-weather-desc', 'mobile-weather-desc'], meta.text);
+    setTextForIds(['gps-weather-humidity', 'mobile-weather-humidity'], `Humidity: ${Math.round(snapshot.humidity)}%`);
+    setTextForIds(['gps-weather-wind', 'mobile-weather-wind'], `Wind: ${Math.round(snapshot.windSpeed)} km/h`);
+  }
+
+  function parseWeatherResponse(payload) {
+    const current = payload && typeof payload.current === 'object' ? payload.current : null;
+    if (!current) return null;
+
+    const temperature = Number(current.temperature_2m);
+    const humidity = Number(current.relative_humidity_2m);
+    const weatherCode = Number(current.weather_code);
+    const windSpeed = Number(current.wind_speed_10m);
+    const isDay = Number(current.is_day) === 1;
+    if (!Number.isFinite(temperature) || !Number.isFinite(humidity) || !Number.isFinite(weatherCode) || !Number.isFinite(windSpeed)) {
+      return null;
+    }
+
+    return { temperature, humidity, weatherCode, windSpeed, isDay };
+  }
+
+  async function refreshSidebarWeather(lat, lon) {
+    updatePhilippinesClock();
+
+    const resolvedLat = Number.isFinite(lat) ? lat : MANILA_WEATHER_FALLBACK.lat;
+    const resolvedLon = Number.isFinite(lon) ? lon : MANILA_WEATHER_FALLBACK.lon;
+    const key = `${resolvedLat.toFixed(2)},${resolvedLon.toFixed(2)}`;
+    const now = Date.now();
+
+    if (lastWeatherSnapshot && key === lastWeatherKey && now - lastWeatherFetchedAt < WEATHER_REFRESH_MS) {
+      renderWeather(lastWeatherSnapshot);
+      return;
+    }
+
+    if (weatherPending && weatherPending.key === key) {
+      await weatherPending.promise;
+      return;
+    }
+
+    if (key === lastWeatherKey && now - lastWeatherAttemptAt < WEATHER_RETRY_MS) {
+      renderWeather(lastWeatherSnapshot);
+      return;
+    }
+
+    lastWeatherAttemptAt = now;
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${resolvedLat.toFixed(4)}&longitude=${resolvedLon.toFixed(4)}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day&timezone=${encodeURIComponent(PH_TIMEZONE)}`;
+    const promise = (async () => {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Weather API error: ${response.status}`);
+        const payload = await response.json();
+        const snapshot = parseWeatherResponse(payload);
+        if (!snapshot) throw new Error('Invalid weather payload');
+
+        lastWeatherKey = key;
+        lastWeatherFetchedAt = Date.now();
+        lastWeatherSnapshot = snapshot;
+        renderWeather(snapshot);
+      } catch (err) {
+        console.warn('[Weather] Failed to refresh sidebar weather:', err && err.message ? err.message : err);
+        renderWeather(lastWeatherSnapshot);
+      } finally {
+        weatherPending = null;
+      }
+    })();
+
+    weatherPending = { key, promise };
+    await promise;
   }
 
   function pickInitials(name) {
@@ -2654,6 +2803,8 @@
       speed = Math.max(0, parseFloat(last.speed) || 0);
     }
 
+    void refreshSidebarWeather(lat, lon);
+
     // --- sidebar GPS card ---
     const locEl   = document.getElementById('gps-location');
     const subEl   = document.getElementById('gps-fix-sub');
@@ -2764,16 +2915,100 @@
     const speedEl   = document.getElementById('speedNum');
     const statusEl  = document.getElementById('speedStatus');
     const gaugeFill = document.getElementById('gaugeFill');
-    if (speedEl) speedEl.textContent = Math.round(speed);
+    const hasSpeedData = lat !== null && lon !== null;
+    if (speedEl) speedEl.textContent = hasSpeedData ? String(Math.round(speed)) : '—';
     if (statusEl) {
-      if (speed > 60)      { statusEl.textContent = 'Over limit';   statusEl.style.color = 'var(--danger)';  }
-      else if (speed > 50) { statusEl.textContent = 'Near limit';   statusEl.style.color = 'var(--warning)'; }
-      else                 { statusEl.textContent = 'Within limit'; statusEl.style.color = 'var(--success)'; }
+      if (!hasSpeedData) {
+        statusEl.textContent = 'Waiting for GPS';
+        statusEl.style.color = 'var(--muted)';
+      } else if (speed > 60) {
+        statusEl.textContent = 'Over limit';
+        statusEl.style.color = 'var(--danger)';
+      } else if (speed > 50) {
+        statusEl.textContent = 'Near limit';
+        statusEl.style.color = 'var(--warning)';
+      } else {
+        statusEl.textContent = 'Within limit';
+        statusEl.style.color = 'var(--success)';
+      }
     }
     if (gaugeFill) {
       const circumference = 2 * Math.PI * 27;
-      gaugeFill.style.strokeDashoffset = String(circumference * (1 - Math.min(speed / 80, 1)));
+      if (!hasSpeedData) {
+        gaugeFill.style.stroke = 'var(--muted)';
+        gaugeFill.style.strokeDashoffset = String(circumference);
+      } else {
+        gaugeFill.style.stroke = speed > 60 ? 'var(--danger)' : (speed > 50 ? 'var(--warning)' : 'var(--primary)');
+        gaugeFill.style.strokeDashoffset = String(circumference * (1 - Math.min(speed / 80, 1)));
+      }
     }
+
+    // --- live insights + quick snapshot ---
+    const setSidebarText = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+
+    const heartbeat = lastStatusData && typeof lastStatusData.heartbeat === 'object' ? lastStatusData.heartbeat : {};
+    const latestTs = points.length > 0 ? points[points.length - 1].ts : (heartbeat.last_seen_ts || null);
+    let packetAge = '--';
+    if (latestTs) {
+      const diff = Math.round((Date.now() - new Date(latestTs).getTime()) / 1000);
+      if (Number.isFinite(diff)) {
+        if (diff < 60) packetAge = `${diff}s ago`;
+        else if (diff < 3600) packetAge = `${Math.floor(diff / 60)}m ago`;
+        else packetAge = `${Math.floor(diff / 3600)}h ago`;
+      }
+    }
+
+    let operatorLabel = 'Unavailable';
+    const netLog = lastStatusData && lastStatusData.latest_network_log;
+    if (netLog && netLog.operator && String(netLog.operator).trim()) {
+      operatorLabel = String(netLog.operator).trim();
+    } else if (lastStatusData && lastStatusData.COPS) {
+      const match = String(lastStatusData.COPS).match(/,\s*"([^"]+)"/);
+      if (match) operatorLabel = match[1];
+    }
+
+    const satNumber = Number(satCount);
+    let signalDesc = 'Satellite count unavailable';
+    if (Number.isFinite(satNumber)) {
+      if (satNumber >= 10) signalDesc = 'Strong GNSS coverage';
+      else if (satNumber >= 6) signalDesc = 'Stable GNSS coverage';
+      else if (satNumber >= 3) signalDesc = 'Weak GNSS coverage';
+      else signalDesc = 'Poor GNSS coverage';
+    }
+    if (lastStatusData && lastStatusData.CSQ_MEANING) {
+      signalDesc = String(lastStatusData.CSQ_MEANING);
+    }
+
+    const movementDesc = !hasSpeedData
+      ? 'No live coordinates yet'
+      : (speed > 2 ? `Moving at ${Math.round(speed)} km/h` : 'Stationary');
+
+    const sourceLabel = hasFix
+      ? 'Live GPS fix'
+      : (points.length > 0 ? 'Track fallback' : 'No fix');
+
+    const trackerState = !hasSpeedData
+      ? 'Awaiting signal'
+      : (speed > 2 ? 'Moving' : 'Idle');
+
+    const compactOperator = operatorLabel.length > 16
+      ? `${operatorLabel.slice(0, 13)}...`
+      : operatorLabel;
+
+    setSidebarText('insight-signal-desc', signalDesc);
+    setSidebarText('insight-signal-time', Number.isFinite(satNumber) ? `${satNumber} sat` : '--');
+    setSidebarText('insight-move-desc', movementDesc);
+    setSidebarText('insight-move-time', hasSpeedData ? `${Math.round(speed)} km/h` : '--');
+    setSidebarText('insight-net-desc', operatorLabel === 'Unavailable' ? 'Waiting for network operator' : `Operator: ${operatorLabel}`);
+    setSidebarText('insight-net-time', heartbeat.last_online_ago ? String(heartbeat.last_online_ago) : packetAge);
+
+    setSidebarText('snapshot-source', sourceLabel);
+    setSidebarText('snapshot-packet', packetAge);
+    setSidebarText('snapshot-operator', compactOperator);
+    setSidebarText('snapshot-state', trackerState);
   }
 
   async function refreshFromPi() {
@@ -3091,6 +3326,16 @@
   }
 
   updateBackendModeUI();
+
+  updatePhilippinesClock();
+  setInterval(updatePhilippinesClock, 1000);
+
+  void refreshSidebarWeather(null, null);
+  setInterval(() => {
+    const weatherLat = lastPanelData && Number.isFinite(lastPanelData.lat) ? lastPanelData.lat : null;
+    const weatherLon = lastPanelData && Number.isFinite(lastPanelData.lon) ? lastPanelData.lon : null;
+    void refreshSidebarWeather(weatherLat, weatherLon);
+  }, WEATHER_REFRESH_MS);
 
   refreshFromPi();
   setInterval(refreshFromPi, 10000);
