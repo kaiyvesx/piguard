@@ -500,6 +500,56 @@
     .map-btn:hover { border-color: var(--primary); color: var(--primary); }
     .map-btn.active { background: var(--primary); color: var(--secondary); border-color: var(--primary); }
 
+    .map-weather-card {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      min-width: 220px;
+      max-width: min(320px, calc(100% - 140px));
+      background: rgba(8,16,30,.88);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      z-index: 800;
+      box-shadow: 0 4px 22px rgba(0,0,0,.35);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+    .map-weather-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .map-weather-icon {
+      font-size: 1.35rem;
+      line-height: 1;
+    }
+    .map-weather-temp {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .map-weather-desc {
+      font-size: 0.66rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .map-weather-meta {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px 12px;
+    }
+    .map-weather-extra {
+      font-size: 0.64rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     /* Live toast */
     .live-toast {
       position: absolute;
@@ -684,6 +734,16 @@
       color: var(--primary);
       white-space: nowrap;
       box-shadow: 0 2px 8px rgba(0,0,0,.25);
+    }
+
+    @media (max-width: 900px) {
+      .map-weather-card {
+        top: 62px;
+        max-width: calc(100% - 24px);
+      }
+      .map-weather-meta {
+        grid-template-columns: 1fr;
+      }
     }
 
     /* ── SMS PANEL ── */
