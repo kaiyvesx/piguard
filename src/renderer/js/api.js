@@ -289,6 +289,10 @@
   const trackingLogToggleEl = document.getElementById('trackingLogToggle');
   const trackingLogToggleIconEl = document.getElementById('trackingLogToggleIcon');
   const trackingMessageLogEl = document.getElementById('trackingMessageLog');
+  const trackingDevicesPaneEl = document.getElementById('trackingDevicesPane');
+  const trackingPaneToggleEl = document.getElementById('trackingPaneToggle');
+  const trackingPaneToggleIconEl = document.getElementById('trackingPaneToggleIcon');
+  const trackingPaneToggleTextEl = document.getElementById('trackingPaneToggleText');
   const mobileTrackingStatusEl = document.getElementById('mobileTrackingStatus');
   const mobileGpsCoordsEl = document.getElementById('mobileGpsCoords');
   const trackingMapHintEl = document.getElementById('trackingMapHint');
@@ -334,8 +338,48 @@
   const colorOrder = ['#1e88e5', '#2e7d32', '#f57c00', '#8e24aa', '#d81b60', '#00897b', '#5e35b1'];
   const OFFLINE_MARKER_COLOR = '#98a2b3';
   const TRACKING_MANILA_CENTER = [14.5995, 120.9842];
+  const TRACKING_PANE_COLLAPSED_KEY = 'pi-mobile-tracking-pane-collapsed';
   let selectedTrackingDeviceId = '';
   let trackingUiInitialized = false;
+
+  function setTrackingLogCollapsed(collapsed) {
+    if (!trackingLogPanelEl) return;
+
+    const isCollapsed = !!collapsed;
+    trackingLogPanelEl.classList.toggle('is-collapsed', isCollapsed);
+
+    if (trackingLogToggleEl) {
+      trackingLogToggleEl.setAttribute('aria-expanded', String(!isCollapsed));
+    }
+    if (trackingLogToggleIconEl) {
+      trackingLogToggleIconEl.innerHTML = isCollapsed ? '&#9662;' : '&#9652;';
+    }
+  }
+
+  function setTrackingPaneCollapsed(collapsed) {
+    if (!trackingDevicesPaneEl) return;
+
+    const isCollapsed = !!collapsed;
+    trackingDevicesPaneEl.classList.toggle('is-collapsed', isCollapsed);
+    setTrackingLogCollapsed(isCollapsed);
+
+    if (trackingPaneToggleEl) {
+      trackingPaneToggleEl.setAttribute('aria-expanded', String(!isCollapsed));
+      trackingPaneToggleEl.title = isCollapsed ? 'Expand devices pane' : 'Collapse devices pane';
+    }
+    if (trackingPaneToggleTextEl) {
+      trackingPaneToggleTextEl.textContent = isCollapsed ? 'Show' : 'Hide';
+    }
+    if (trackingPaneToggleIconEl) {
+      trackingPaneToggleIconEl.innerHTML = isCollapsed ? '&#9656;' : '&#9664;';
+    }
+
+    try {
+      localStorage.setItem(TRACKING_PANE_COLLAPSED_KEY, isCollapsed ? '1' : '0');
+    } catch {
+      // Ignore storage errors in restricted runtime contexts.
+    }
+  }
 
   function setConnectionState(connected, message, tooltip = '') {
     if (!connStatusEl) return;
@@ -886,11 +930,24 @@
 
     if (trackingLogToggleEl && trackingLogPanelEl) {
       trackingLogToggleEl.addEventListener('click', () => {
-        const collapsed = trackingLogPanelEl.classList.toggle('is-collapsed');
-        trackingLogToggleEl.setAttribute('aria-expanded', String(!collapsed));
-        if (trackingLogToggleIconEl) {
-          trackingLogToggleIconEl.innerHTML = collapsed ? '&#9662;' : '&#9652;';
-        }
+        const collapsed = trackingLogPanelEl.classList.contains('is-collapsed');
+        setTrackingLogCollapsed(!collapsed);
+      });
+    }
+
+    if (trackingPaneToggleEl && trackingDevicesPaneEl) {
+      let startsCollapsed = true;
+      try {
+        const savedState = localStorage.getItem(TRACKING_PANE_COLLAPSED_KEY);
+        startsCollapsed = savedState == null ? true : savedState === '1';
+      } catch {
+        startsCollapsed = true;
+      }
+      setTrackingPaneCollapsed(startsCollapsed);
+
+      trackingPaneToggleEl.addEventListener('click', () => {
+        const collapsed = trackingDevicesPaneEl.classList.contains('is-collapsed');
+        setTrackingPaneCollapsed(!collapsed);
       });
     }
 

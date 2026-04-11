@@ -1,10 +1,16 @@
 <!-- Mobile Tracking Panel -->
 <div class="panel" id="panel-mobile">
   <div class="tracking-shell">
-    <aside class="tracking-devices-pane">
+    <aside class="tracking-devices-pane" id="trackingDevicesPane">
       <div class="tracking-pane-header">
-        <h3 class="tracking-pane-title">Connected Devices</h3>
-        <p class="tracking-pane-subtitle" id="mobileTrackingStatus">Waiting for device presence updates...</p>
+        <div class="tracking-pane-head-copy">
+          <h3 class="tracking-pane-title">Connected Devices</h3>
+          <p class="tracking-pane-subtitle" id="mobileTrackingStatus">Waiting for device presence updates...</p>
+        </div>
+        <button type="button" class="tracking-pane-toggle" id="trackingPaneToggle" aria-expanded="true" aria-controls="trackingDevicesPane" title="Collapse devices pane">
+          <span class="tracking-pane-toggle-text" id="trackingPaneToggleText">Hide</span>
+          <span class="tracking-pane-toggle-icon" id="trackingPaneToggleIcon">&#9664;</span>
+        </button>
       </div>
       <div class="tracking-device-cards" id="trackingDeviceCards">
         <div class="tracking-device-empty">No devices seen yet. Device cards appear automatically when mobile apps connect.</div>

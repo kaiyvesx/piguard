@@ -1,14 +1,17 @@
 #panel-mobile .tracking-shell {
   position: absolute;
   inset: 0;
-  display: flex;
-  gap: 0;
+  display: block;
   background: radial-gradient(circle at 10% 10%, rgba(0, 153, 255, 0.1), rgba(4, 10, 20, 0.98));
   color: var(--text);
   overflow: hidden;
 }
 
 #panel-mobile .tracking-devices-pane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
   width: min(32%, 430px);
   min-width: 300px;
   max-width: 460px;
@@ -17,11 +20,22 @@
   display: flex;
   flex-direction: column;
   z-index: 20;
+  box-shadow: 8px 0 20px rgba(0, 0, 0, 0.24);
+  transition: width 0.24s ease, min-width 0.24s ease, max-width 0.24s ease, max-height 0.24s ease, min-height 0.24s ease;
 }
 
 #panel-mobile .tracking-pane-header {
   padding: 14px 14px 10px;
   border-bottom: 1px solid rgba(74, 137, 255, 0.22);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#panel-mobile .tracking-pane-head-copy {
+  min-width: 0;
+  flex: 1;
 }
 
 #panel-mobile .tracking-pane-title {
@@ -37,6 +51,67 @@
   font-size: 0.74rem;
   color: #8ea6c2;
   margin: 0;
+}
+
+#panel-mobile .tracking-pane-toggle {
+  height: 30px;
+  min-width: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(121, 165, 214, 0.45);
+  background: rgba(15, 39, 69, 0.85);
+  color: #d9ecff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+#panel-mobile .tracking-pane-toggle:hover {
+  border-color: rgba(170, 210, 255, 0.8);
+  background: rgba(24, 62, 108, 0.85);
+}
+
+#panel-mobile .tracking-pane-toggle:focus-visible {
+  outline: 2px solid rgba(170, 210, 255, 0.9);
+  outline-offset: 2px;
+}
+
+#panel-mobile .tracking-pane-toggle-icon {
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+#panel-mobile .tracking-devices-pane.is-collapsed {
+  width: 56px;
+  min-width: 56px;
+  max-width: 56px;
+}
+
+#panel-mobile .tracking-devices-pane.is-collapsed .tracking-pane-header {
+  padding: 10px;
+  border-bottom: 0;
+  justify-content: center;
+}
+
+#panel-mobile .tracking-devices-pane.is-collapsed .tracking-pane-head-copy,
+#panel-mobile .tracking-devices-pane.is-collapsed .tracking-device-cards {
+  display: none;
+}
+
+#panel-mobile .tracking-devices-pane.is-collapsed .tracking-pane-toggle {
+  width: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+#panel-mobile .tracking-devices-pane.is-collapsed .tracking-pane-toggle-text {
+  display: none;
 }
 
 #panel-mobile .tracking-device-cards {
@@ -165,10 +240,10 @@
 }
 
 #panel-mobile .tracking-map-pane {
-  flex: 1;
-  position: relative;
-  min-width: 0;
-  min-height: 0;
+  position: absolute;
+  margin-left: 50px;
+  inset: 0;
+  z-index: 1;
 }
 
 #panel-mobile #mobile-map {
@@ -290,17 +365,30 @@
 }
 
 @media (max-width: 1024px) {
-  #panel-mobile .tracking-shell {
-    flex-direction: column;
-  }
-
   #panel-mobile .tracking-devices-pane {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: auto;
     width: 100%;
     max-width: none;
     min-width: 0;
     max-height: 45%;
     border-right: 0;
     border-bottom: 1px solid rgba(74, 137, 255, 0.22);
+  }
+
+  #panel-mobile .tracking-devices-pane.is-collapsed {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    min-height: 52px;
+    max-height: 52px;
+  }
+
+  #panel-mobile .tracking-devices-pane.is-collapsed .tracking-pane-header {
+    justify-content: flex-end;
+    padding: 10px 12px;
   }
 
   #panel-mobile .tracking-map-pane {
