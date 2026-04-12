@@ -251,12 +251,15 @@ contextBridge.exposeInMainWorld('backendBridge', {
 });
 
 const TRACKING_RECEIVE_CHANNELS = new Set([
+  'mobile:device_online',
+  'mobile:device_offline',
+  'mobile:location',
+  // Legacy compatibility channels.
   'tracking:device_online',
   'tracking:device_offline',
   'tracking:location',
   'tracking:devices_update',
   'tracking:message_log',
-  // Compatibility channels for legacy tracking approval flow.
   'tracking:request',
   'tracking:session_end',
   'tracking:approved',
@@ -306,14 +309,12 @@ contextBridge.exposeInMainWorld('trackingBridge', {
   on: (channel, callback) => addTrackingListener(channel, callback),
   off: (channel, callback) => removeTrackingListener(channel, callback),
 
-  onDeviceOnline: (callback) => addTrackingListener('tracking:device_online', callback),
-  onDeviceOffline: (callback) => addTrackingListener('tracking:device_offline', callback),
-  onLocation: (callback) => addTrackingListener('tracking:location', callback),
+  onDeviceOnline: (callback) => addTrackingListener('mobile:device_online', callback),
+  onDeviceOffline: (callback) => addTrackingListener('mobile:device_offline', callback),
+  onLocation: (callback) => addTrackingListener('mobile:location', callback),
   onDevicesUpdate: (callback) => addTrackingListener('tracking:devices_update', callback),
   onMessageLog: (callback) => addTrackingListener('tracking:message_log', callback),
 
-  approve: (deviceId, payload = {}) => unwrapResponse(ipcRenderer.invoke('tracking:approve', deviceId, payload)),
-  reject: (deviceId, payload = {}) => unwrapResponse(ipcRenderer.invoke('tracking:reject', deviceId, payload)),
   sendCommand: (deviceId, action, payload = {}) =>
     unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
   getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
@@ -322,4 +323,10 @@ contextBridge.exposeInMainWorld('trackingBridge', {
 contextBridge.exposeInMainWorld('electronAPI', {
   on: (channel, cb) => ipcRenderer.on(channel, cb),
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  onMobileDeviceOnline: (callback) => addTrackingListener('mobile:device_online', callback),
+  onMobileDeviceOffline: (callback) => addTrackingListener('mobile:device_offline', callback),
+  onMobileLocation: (callback) => addTrackingListener('mobile:location', callback),
+  getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
+  sendCommand: (deviceId, action, payload = {}) =>
+    unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
 });

@@ -5,7 +5,7 @@ const { app, BrowserWindow, session, nativeImage } = require('electron');
 const os = require('os');
 const path = require('path');
 const { setupEventForwarding } = require('./ipc-handlers');
-const { adminClient } = require('../services/websocket');
+const { adminClient } = require('./admin-ws-client');
 
 let registerTrackingIPC = null;
 try {

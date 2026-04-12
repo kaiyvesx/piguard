@@ -1,6 +1,6 @@
 # PiGuard Backend Multi-Device Analysis
 
-Date: 2026-04-02  
+Date: 2026-04-12  
 Requested scope:
 - server_backend/app
 - backend
@@ -8,11 +8,14 @@ Requested scope:
 
 ## Scope Notes
 
-- Primary source of truth for current backend behavior is server_backend/app.
+- Primary source of truth for current backend behavior remains server_backend/app.
 - server_backend/README.md states this service replaces the older backend folder and combines WebSocket + legacy HTTP APIs.
-- backend contains a legacy single-device SIM7000 backend and does not implement the same ws/admin command architecture.
+- backend remains a legacy single-device SIM7000 backend and does not implement the same ws/admin command architecture.
+- tracker_backend/backend exists in repo but is a separate HTTP-only backend frame, not the current multi-device WebSocket hub.
 
-Reference: server_backend/README.md:3
+References:
+- server_backend/README.md:3
+- tracker_backend/backend/app/main.py:14
 
 ---
 
@@ -30,7 +33,8 @@ Evidence:
 NO explicit limit found in code.
 
 Evidence:
-- No max-device guard/constant; uses dynamic dict/set/list structures:
+- No max-device guard/constant in server_backend/app.
+- Dynamic dict/set/list structures are used:
   - server_backend/app/hub.py:37
   - server_backend/app/store.py:100
   - server_backend/app/store.py:104
@@ -39,18 +43,17 @@ Evidence:
 BOTH memory and database depending on configuration, plus SQLite audit logging.
 
 Evidence:
-- Default storage is in-memory when DATABASE_URL is empty:
-  - server_backend/app/store.py:572
+- Default command/response store is in-memory when DATABASE_URL is empty:
   - server_backend/app/store.py:573
   - server_backend/app/store.py:575
 - Postgres store is used when DATABASE_URL is set:
   - server_backend/app/store.py:239
   - server_backend/app/store.py:576
-- Devices table in Postgres store:
+- Devices are persisted in Postgres via devices table:
   - server_backend/app/store.py:255
-- Separate SQLite audit log stores event history (including device_id), not the live command queue state:
+- Separate SQLite audit log stores append-only event history (not the live queue state):
   - server_backend/app/sqlite_log.py:32
-  - server_backend/app/sqlite_log.py:36
+  - server_backend/app/sqlite_log.py:82
 
 ### Q1.4 What happens when device_id "abc" and "xyz" connect at the same time?
 Both are stored and can be active simultaneously (as different keys).
@@ -73,7 +76,7 @@ YES.
 Evidence:
 - One expected token from env var MOBILE_BEARER_TOKEN:
   - server_backend/app/auth_tokens.py:13
-- Validation is simple equality against that single expected value:
+- Validation is equality against that single expected value:
   - server_backend/app/auth_tokens.py:26
   - server_backend/app/auth_tokens.py:27
 
@@ -89,11 +92,11 @@ Evidence:
 YES.
 
 Evidence:
-- Auth checks token only: server_backend/app/auth_tokens.py:27
+- Auth checks token validity only: server_backend/app/auth_tokens.py:27
 - Session routing identity is device_id key: server_backend/app/hub.py:50
 
 Note:
-- If ALLOW_UNAUTHENTICATED=true, token checks are bypassed entirely:
+- If ALLOW_UNAUTHENTICATED=true, token checks are bypassed:
   - server_backend/app/auth_tokens.py:4
   - server_backend/app/auth_tokens.py:17
   - server_backend/app/auth_tokens.py:24
@@ -114,8 +117,8 @@ Evidence:
 YES.
 
 Evidence:
-- Required in ws hello handshake path:
-  - server_backend/app/main.py:306
+- Required in WebSocket hello handshake path:
+  - server_backend/app/main.py:295
   - server_backend/app/main.py:310
   - server_backend/app/main.py:323
 
@@ -124,7 +127,7 @@ The latest bind overwrites routing for that device_id (no duplicate-device rejec
 
 Evidence:
 - Overwrite assignment: server_backend/app/hub.py:50
-- Unbind only removes mapping if websocket instance matches current entry:
+- Unbind removes mapping only if websocket instance matches current entry:
   - server_backend/app/hub.py:55
 
 Implication:
@@ -142,9 +145,10 @@ Evidence:
   - server_backend/app/main.py:89
   - server_backend/app/main.py:90
   - server_backend/app/main.py:93
-- Hub enqueue call is keyed by that device_id: server_backend/app/hub.py:91
+- Hub enqueue is keyed by that device_id: server_backend/app/hub.py:91
 - Delivery/fetch is per device_id:
   - server_backend/app/hub.py:71
+  - server_backend/app/store.py:137
   - server_backend/app/store.py:360
 
 ### Q4.2 Is command routing per device_id already working?
@@ -160,7 +164,10 @@ Evidence:
   - server_backend/app/store.py:485
 
 Compatibility note:
-- backend1 variant exposes POST /admin/command (singular), not /admin/commands:
+- Current server_backend exposes both plural and singular admin command endpoints:
+  - POST /admin/commands: server_backend/app/main.py:89
+  - POST /admin/command: server_backend/app/main.py:141
+- backend1 variant still exposes only singular POST /admin/command:
   - backend1/server_backend/app/main.py:54
 
 ---
@@ -182,9 +189,8 @@ Evidence:
 - Device responses are broadcast to admin sockets:
   - server_backend/app/hub.py:160
 - Broadcast iterates all connected admin sockets:
-  - server_backend/app/hub.py:192
+  - server_backend/app/hub.py:190
   - server_backend/app/hub.py:194
-  - server_backend/app/hub.py:199
 
 ---
 
@@ -195,7 +201,7 @@ No explicit hard failure is coded for 5 devices.
 
 Evidence:
 - No connection-count limit found.
-- Uses dynamic data structures (dict/list/set):
+- Dynamic data structures are used (dict/list/set):
   - server_backend/app/hub.py:37
   - server_backend/app/store.py:100
   - server_backend/app/store.py:104
@@ -203,12 +209,13 @@ Evidence:
 Practical risks (not hardcoded "break at 5"):
 - Same device_id collision overwrites active socket routing:
   - server_backend/app/hub.py:50
-- In-memory mode is default without DATABASE_URL, so restart loses queue/history state:
+- In-memory mode is default without DATABASE_URL, so restart loses queue/response/log state:
   - server_backend/app/store.py:573
   - server_backend/app/store.py:575
-- Queue/list sizes are not capped:
-  - server_backend/app/store.py:100
+- Queue/list growth is uncapped in code:
   - server_backend/app/store.py:131
+  - server_backend/app/store.py:173
+  - server_backend/app/store.py:196
 - README warns mixed WS + HTTP transport for same device can race:
   - server_backend/README.md:3
 
@@ -233,4 +240,106 @@ Evidence (current backend is multi-device oriented):
 
 ## Summary
 
-Current backend (server_backend/app) already supports multi-device routing by device_id, shared token auth for all mobile devices, and admin broadcast visibility across device responses. The main gaps before production-grade multi-device scale are duplicate device_id handling, bounded queue/memory controls, and persistence mode decisions (memory vs Postgres).
+Current backend (server_backend/app) still supports multi-device routing by device_id, shared mobile token auth across devices, and admin broadcast visibility across device responses. Key production-hardening gaps remain duplicate device_id handling, bounded queue/memory controls, and persistence strategy decisions (MemoryStore vs PostgresStore).
+
+---
+
+## 7) FILE STRUCTURE (Current Workspace Snapshot)
+
+```text
+package.json
+README_BACKEND_ANALYSIS.md
+README.md
+backend/
+  app_1.py
+  app_2.py
+  app.py
+  app32326.py
+  backend.py
+  backend32326.py
+backend1/
+  server_backend/
+    needed.md
+    README.md
+    requirements.txt
+    start.sh
+    test_mobile_device.py
+    app/
+      __init__.py
+      auth_tokens.py
+      hub.py
+      main.py
+      sqlite_log.py
+    data/
+    docs/
+      ELECTRON_ADMIN.md
+scripts/
+  run_simulators.py
+  simulate_mobile_tracking_ws.py
+  simulate_mobile.py
+  simulate_raspi.py
+server_backend/
+  README.md
+  requirements.txt
+  start.sh
+  app/
+    __init__.py
+    auth_tokens.py
+    http_auth.py
+    hub.py
+    main.py
+    models.py
+    sqlite_log.py
+    store.py
+  docs/
+    ELECTRON_ADMIN.md
+src/
+  main/
+    ipc-handlers.js
+    main.js
+    preload.js
+    tracking-ipc.js
+  renderer/
+    index.html
+    components/
+      header.html
+      sidebar-camera.html
+      sidebar-gps.html
+      sidebar-mobile.html
+      sidebar-sms.html
+      sidebar.html
+    css/
+      index.css
+      panel-mobile.css
+    js/
+      api.js
+      index.js
+      layout-loader.js
+      socket.js
+    pages/
+      panel-camera.html
+      panel-gps.html
+      panel-mobile.html
+      panel-sms.html
+  services/
+    adb-fallback.js
+    adb.js
+    api.js
+    backend.config.js
+    camera.service.js
+    gps.service.js
+    sms.service.js
+    tracking-handler.js
+    websocket.js
+tracker_backend/
+  backend/
+    README.md
+    requirements.txt
+    start.ps1
+    app/
+      __init__.py
+      auth.py
+      main.py
+      models.py
+      store.py
+```

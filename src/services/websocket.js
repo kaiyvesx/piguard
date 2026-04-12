@@ -144,7 +144,7 @@ class AdminWebSocketClient extends EventEmitter {
   _handleMessage(msg, connectResolve, connectReject, connectTimeout) {
     const type = msg.type;
 
-    if (type === 'device_event' || type === 'tracking_request' || type === 'location_update' || type === 'tracking_session_end') {
+    if (type === 'device_event') {
       this._refreshOfflineLogState(msg);
       trackingHandler.handle(msg, this);
       this.emit('device_event', msg);

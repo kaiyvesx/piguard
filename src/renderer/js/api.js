@@ -92,6 +92,10 @@
           console.warn('[Tracking] Failed to load initial device list:', err.message);
         });
     } else if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+      window.electronAPI.on('mobile:device_online', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
+      window.electronAPI.on('mobile:device_offline', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
+      window.electronAPI.on('mobile:location', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
+
       window.electronAPI.on('tracking:device_online', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
       window.electronAPI.on('tracking:device_offline', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
       window.electronAPI.on('tracking:location', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
@@ -287,6 +291,7 @@
   const trackingCardsEl = document.getElementById('trackingDeviceCards');
   let trackingLogPanelEl = document.getElementById('trackingLogPanel');
   let trackingLogToggleEl = document.getElementById('trackingLogToggle');
+  let trackingEventLogToggleEl = document.getElementById('trackingEventLogToggle');
   let trackingLogBackdropEl = document.getElementById('trackingLogBackdrop');
   let trackingLogCloseBtnEl = document.getElementById('trackingLogCloseBtn');
   let trackingMessageLogEl = document.getElementById('trackingMessageLog');
@@ -330,6 +335,7 @@
   let expandedCameraIndex = null;
   const trackingDevices = new Map();
   const trackingVisuals = new Map();
+  const deviceLayers = new Map();
   const trackingMessageLog = [];
   const trackingMessageKeys = new Set();
   const trackingPendingRequests = new Map();
@@ -349,6 +355,9 @@
     }
     if (!trackingLogToggleEl || !trackingLogToggleEl.isConnected) {
       trackingLogToggleEl = document.getElementById('trackingLogToggle');
+    }
+    if (!trackingEventLogToggleEl || !trackingEventLogToggleEl.isConnected) {
+      trackingEventLogToggleEl = document.getElementById('trackingEventLogToggle');
     }
     if (!trackingLogBackdropEl || !trackingLogBackdropEl.isConnected) {
       trackingLogBackdropEl = document.getElementById('trackingLogBackdrop');
@@ -371,6 +380,9 @@
 
     if (trackingLogToggleEl) {
       trackingLogToggleEl.setAttribute('aria-expanded', String(isOpen));
+    }
+    if (trackingEventLogToggleEl) {
+      trackingEventLogToggleEl.setAttribute('aria-expanded', String(isOpen));
     }
 
     if (isOpen && trackingLogCloseBtnEl) {
@@ -747,7 +759,13 @@
   function ensureTrackingVisual(deviceId) {
     const trackingMap = getTrackingMap();
     if (!trackingMap) return null;
-    if (trackingVisuals.has(deviceId)) return trackingVisuals.get(deviceId);
+    if (trackingVisuals.has(deviceId)) {
+      const existing = trackingVisuals.get(deviceId);
+      if (!deviceLayers.has(deviceId)) {
+        deviceLayers.set(deviceId, existing);
+      }
+      return existing;
+    }
 
     const color = getDeviceColor(deviceId);
     const marker = L.marker(TRACKING_MANILA_CENTER, {
@@ -764,6 +782,7 @@
 
     const visual = { marker, routeLine, color };
     trackingVisuals.set(deviceId, visual);
+    deviceLayers.set(deviceId, visual);
     return visual;
   }
 
@@ -1070,7 +1089,6 @@
     renderTrackingSummary();
     renderTrackingCards();
     refreshTrackingVisuals();
-    fitMapToOnlineDevices();
   }
 
   function applyDeviceLifecycle(action, deviceId, payload = {}) {
@@ -1242,9 +1260,6 @@
     renderTrackingMessageLog();
     refreshTrackingVisuals();
 
-    if (action === 'location_update' || action === 'device_online') {
-      fitMapToOnlineDevices();
-    }
   }
 
   initializeTrackingPanelUi();
@@ -3317,7 +3332,7 @@
     const target = evt.target;
     if (!target || !target.closest) return;
 
-    const openLogBtn = target.closest('#trackingLogToggle');
+    const openLogBtn = target.closest('#trackingLogToggle, #trackingEventLogToggle');
     if (openLogBtn) {
       evt.preventDefault();
       renderTrackingMessageLog();
