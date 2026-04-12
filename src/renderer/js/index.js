@@ -219,21 +219,6 @@ const searchInput = document.getElementById('searchInput');
 if (searchBtn) searchBtn.addEventListener('click', searchPlace);
 if (searchInput) searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchPlace(); });
 
-// ── Action buttons ──
-function rerouteAlert() {
-  const toast = document.getElementById('liveToast');
-  const orig = toast.innerHTML;
-  toast.innerHTML = '<div style="color:#ffb300;font-size:1rem">&#x21BA;</div>&nbsp;Calculating faster route&hellip;';
-  setTimeout(() => { toast.innerHTML = orig; }, 2500);
-}
-
-function stopNav() {
-  if (confirm('Stop navigation?')) {
-    document.getElementById('liveToast').innerHTML =
-      '<div style="color:var(--danger);font-size:1rem">&#x25A0;</div>&nbsp;Navigation stopped';
-  }
-}
-
 // ══════════════════════════════════════════
 //  THEME TOGGLE
 // ══════════════════════════════════════════

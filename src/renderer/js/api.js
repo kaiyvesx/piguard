@@ -285,10 +285,11 @@
   const cameraRecordingListEl = document.getElementById('cameraRecordingList');
   const cameraRecordingLastActionEl = document.getElementById('cameraRecordingLastAction');
   const trackingCardsEl = document.getElementById('trackingDeviceCards');
-  const trackingLogPanelEl = document.getElementById('trackingLogPanel');
-  const trackingLogToggleEl = document.getElementById('trackingLogToggle');
-  const trackingLogToggleIconEl = document.getElementById('trackingLogToggleIcon');
-  const trackingMessageLogEl = document.getElementById('trackingMessageLog');
+  let trackingLogPanelEl = document.getElementById('trackingLogPanel');
+  let trackingLogToggleEl = document.getElementById('trackingLogToggle');
+  let trackingLogBackdropEl = document.getElementById('trackingLogBackdrop');
+  let trackingLogCloseBtnEl = document.getElementById('trackingLogCloseBtn');
+  let trackingMessageLogEl = document.getElementById('trackingMessageLog');
   const trackingDevicesPaneEl = document.getElementById('trackingDevicesPane');
   const trackingPaneToggleEl = document.getElementById('trackingPaneToggle');
   const trackingPaneToggleIconEl = document.getElementById('trackingPaneToggleIcon');
@@ -342,17 +343,40 @@
   let selectedTrackingDeviceId = '';
   let trackingUiInitialized = false;
 
-  function setTrackingLogCollapsed(collapsed) {
+  function refreshTrackingLogElements() {
+    if (!trackingLogPanelEl || !trackingLogPanelEl.isConnected) {
+      trackingLogPanelEl = document.getElementById('trackingLogPanel');
+    }
+    if (!trackingLogToggleEl || !trackingLogToggleEl.isConnected) {
+      trackingLogToggleEl = document.getElementById('trackingLogToggle');
+    }
+    if (!trackingLogBackdropEl || !trackingLogBackdropEl.isConnected) {
+      trackingLogBackdropEl = document.getElementById('trackingLogBackdrop');
+    }
+    if (!trackingLogCloseBtnEl || !trackingLogCloseBtnEl.isConnected) {
+      trackingLogCloseBtnEl = document.getElementById('trackingLogCloseBtn');
+    }
+    if (!trackingMessageLogEl || !trackingMessageLogEl.isConnected) {
+      trackingMessageLogEl = document.getElementById('trackingMessageLog');
+    }
+  }
+
+  function setTrackingLogModalOpen(open) {
+    refreshTrackingLogElements();
     if (!trackingLogPanelEl) return;
 
-    const isCollapsed = !!collapsed;
-    trackingLogPanelEl.classList.toggle('is-collapsed', isCollapsed);
+    const isOpen = !!open;
+    const activeEl = document.activeElement;
+    trackingLogPanelEl.hidden = !isOpen;
 
     if (trackingLogToggleEl) {
-      trackingLogToggleEl.setAttribute('aria-expanded', String(!isCollapsed));
+      trackingLogToggleEl.setAttribute('aria-expanded', String(isOpen));
     }
-    if (trackingLogToggleIconEl) {
-      trackingLogToggleIconEl.innerHTML = isCollapsed ? '&#9662;' : '&#9652;';
+
+    if (isOpen && trackingLogCloseBtnEl) {
+      trackingLogCloseBtnEl.focus();
+    } else if (!isOpen && trackingLogToggleEl && activeEl && trackingLogPanelEl.contains(activeEl)) {
+      trackingLogToggleEl.focus();
     }
   }
 
@@ -361,7 +385,9 @@
 
     const isCollapsed = !!collapsed;
     trackingDevicesPaneEl.classList.toggle('is-collapsed', isCollapsed);
-    setTrackingLogCollapsed(isCollapsed);
+    if (isCollapsed) {
+      setTrackingLogModalOpen(false);
+    }
 
     if (trackingPaneToggleEl) {
       trackingPaneToggleEl.setAttribute('aria-expanded', String(!isCollapsed));
@@ -634,6 +660,7 @@
   }
 
   function renderTrackingMessageLog() {
+    refreshTrackingLogElements();
     if (!trackingMessageLogEl) return;
 
     if (!trackingMessageLog.length) {
@@ -928,12 +955,7 @@
       trackingMap.setView(TRACKING_MANILA_CENTER, 12);
     }
 
-    if (trackingLogToggleEl && trackingLogPanelEl) {
-      trackingLogToggleEl.addEventListener('click', () => {
-        const collapsed = trackingLogPanelEl.classList.contains('is-collapsed');
-        setTrackingLogCollapsed(!collapsed);
-      });
-    }
+    setTrackingLogModalOpen(false);
 
     if (trackingPaneToggleEl && trackingDevicesPaneEl) {
       let startsCollapsed = true;
@@ -3291,8 +3313,30 @@
     hideCameraSlotMenu();
   });
 
+  document.addEventListener('click', (evt) => {
+    const target = evt.target;
+    if (!target || !target.closest) return;
+
+    const openLogBtn = target.closest('#trackingLogToggle');
+    if (openLogBtn) {
+      evt.preventDefault();
+      renderTrackingMessageLog();
+      setTrackingLogModalOpen(true);
+      return;
+    }
+
+    const closeLogBtn = target.closest('#trackingLogCloseBtn');
+    const logBackdrop = target.closest('#trackingLogBackdrop');
+    if (closeLogBtn || logBackdrop) {
+      evt.preventDefault();
+      setTrackingLogModalOpen(false);
+    }
+  });
+
   document.addEventListener('keydown', (evt) => {
-    if (evt.key === 'Escape') hideCameraSlotMenu();
+    if (evt.key !== 'Escape') return;
+    hideCameraSlotMenu();
+    setTrackingLogModalOpen(false);
   });
 
   if (extraNumberInput) {
