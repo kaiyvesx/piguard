@@ -254,6 +254,7 @@ const TRACKING_RECEIVE_CHANNELS = new Set([
   'mobile:device_online',
   'mobile:device_offline',
   'mobile:location',
+  'mobile:gps_response',
   // Legacy compatibility channels.
   'tracking:device_online',
   'tracking:device_offline',
@@ -312,6 +313,7 @@ contextBridge.exposeInMainWorld('trackingBridge', {
   onDeviceOnline: (callback) => addTrackingListener('mobile:device_online', callback),
   onDeviceOffline: (callback) => addTrackingListener('mobile:device_offline', callback),
   onLocation: (callback) => addTrackingListener('mobile:location', callback),
+  onGpsResponse: (callback) => addTrackingListener('mobile:gps_response', callback),
   onDevicesUpdate: (callback) => addTrackingListener('tracking:devices_update', callback),
   onMessageLog: (callback) => addTrackingListener('tracking:message_log', callback),
 
@@ -326,6 +328,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMobileDeviceOnline: (callback) => addTrackingListener('mobile:device_online', callback),
   onMobileDeviceOffline: (callback) => addTrackingListener('mobile:device_offline', callback),
   onMobileLocation: (callback) => addTrackingListener('mobile:location', callback),
+  onMobileGpsResponse: (callback) => addTrackingListener('mobile:gps_response', callback),
   getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
   sendCommand: (deviceId, action, payload = {}) =>
     unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),

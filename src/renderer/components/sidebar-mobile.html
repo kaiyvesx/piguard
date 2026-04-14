@@ -8,19 +8,37 @@
     </div>
   </div>
 
-  <div class="section-label">Message Log</div>
-  <div class="tracking-sidebar-log-card">
-    <button class="tracking-sidebar-log-btn" id="trackingLogToggle" type="button" aria-haspopup="dialog" aria-controls="trackingLogPanel" aria-expanded="false">
-      <span>Open Live Message Log</span>
-      <span class="tracking-sidebar-log-btn-icon" aria-hidden="true">&#8599;</span>
-    </button>
+  <div class="tracking-sidebar-presence-card" aria-live="polite">
+    <div class="tracking-sidebar-presence-head">Device Presence</div>
+    <div class="tracking-sidebar-presence-grid">
+      <div class="tracking-sidebar-presence-item">
+        <span class="tracking-sidebar-presence-dot online"></span>
+        <span class="tracking-sidebar-presence-label">Online</span>
+        <span class="tracking-sidebar-presence-value" id="mobileSidebarOnlineCount">0</span>
+      </div>
+      <div class="tracking-sidebar-presence-item">
+        <span class="tracking-sidebar-presence-dot offline"></span>
+        <span class="tracking-sidebar-presence-label">Offline</span>
+        <span class="tracking-sidebar-presence-value" id="mobileSidebarOfflineCount">0</span>
+      </div>
+    </div>
+    <div class="tracking-sidebar-presence-total" id="mobileSidebarPresenceSummary">0 devices tracked</div>
   </div>
 
-  <div class="tracking-sidebar-log-card">
-    <button class="tracking-sidebar-log-btn" id="trackingEventLogToggle" type="button" aria-haspopup="dialog" aria-controls="trackingLogPanel" aria-expanded="false">
-      <span>Event log</span>
-      <span class="tracking-sidebar-log-btn-icon" aria-hidden="true">&#8599;</span>
-    </button>
+  <div class="section-label">Tracking Logs</div>
+  <div class="tracking-sidebar-log-group">
+    <div class="tracking-sidebar-log-block">
+      <div class="tracking-sidebar-log-block-head">
+        <div class="tracking-sidebar-log-block-title">Message Log</div>
+        <div class="tracking-sidebar-log-block-sub">Last 50 backend/tracking events</div>
+      </div>
+      <div class="tracking-sidebar-log-card">
+        <button class="tracking-sidebar-log-btn" id="trackingLogToggle" type="button" aria-haspopup="dialog" aria-controls="trackingLogPanel" aria-expanded="false">
+          <span>Open Message Log</span>
+          <span class="tracking-sidebar-log-btn-icon" aria-hidden="true">&#8599;</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <div class="tracking-log-modal" id="trackingLogPanel" hidden>
@@ -34,6 +52,13 @@
         <div class="tracking-log-empty">No tracking events yet.</div>
       </div>
     </section>
+  </div>
+
+  <div class="section-label">Recent Locations</div>
+  <div class="tracking-sidebar-location-card">
+    <div class="tracking-sidebar-location-list" id="sidebarLocationLogList">
+      <div class="tracking-sidebar-location-empty">No location events yet.</div>
+    </div>
   </div>
 
   <div class="section-label">Philippines Time &amp; Weather</div>

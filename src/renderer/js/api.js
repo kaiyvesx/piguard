@@ -500,11 +500,15 @@
     const base = isOffline ? OFFLINE_MARKER_COLOR : color;
     const ring = isSelected ? '#f6f8fc' : '#ffffff';
     const halo = isSelected ? `${base}CC` : `${base}66`;
+    const offlineBadge = isOffline
+      ? '<span style="position:absolute;right:-2px;bottom:-2px;min-width:12px;height:12px;padding:0 2px;border-radius:10px;background:#3f495b;border:1px solid #c9d2e0;color:#eef3fb;font-size:8px;line-height:10px;font-weight:700;text-transform:uppercase;text-align:center;">off</span>'
+      : '';
+
     return L.divIcon({
       className: '',
-      html: `<div style="width:18px;height:18px;border-radius:50%;background:${base};border:2px solid ${ring};box-shadow:0 0 0 4px ${halo},0 2px 10px rgba(0,0,0,.32);"></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
+      html: `<div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;"><div style="width:18px;height:18px;border-radius:50%;background:${base};border:2px solid ${ring};box-shadow:0 0 0 4px ${halo},0 2px 10px rgba(0,0,0,.32);"></div>${offlineBadge}</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
     });
   }
 
@@ -865,6 +869,7 @@
   function renderTrackingSummary() {
     const total = trackingDevices.size;
     const online = Array.from(trackingDevices.values()).filter((device) => device.status === 'online').length;
+    const offline = Math.max(0, total - online);
 
     if (mobileTrackingStatusEl) {
       if (!total) {
@@ -880,6 +885,22 @@
       } else {
         mobileGpsCoordsEl.textContent = `${online} online device${online === 1 ? '' : 's'} • ${total} seen`;
       }
+    }
+
+    const sidebarOnlineCountEl = document.getElementById('mobileSidebarOnlineCount');
+    const sidebarOfflineCountEl = document.getElementById('mobileSidebarOfflineCount');
+    const sidebarPresenceSummaryEl = document.getElementById('mobileSidebarPresenceSummary');
+
+    if (sidebarOnlineCountEl) {
+      sidebarOnlineCountEl.textContent = String(online);
+    }
+    if (sidebarOfflineCountEl) {
+      sidebarOfflineCountEl.textContent = String(offline);
+    }
+    if (sidebarPresenceSummaryEl) {
+      sidebarPresenceSummaryEl.textContent = total
+        ? `${total} device${total === 1 ? '' : 's'} tracked`
+        : '0 devices tracked';
     }
   }
 

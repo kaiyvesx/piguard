@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { setupEventForwarding } = require('./ipc-handlers');
 const { adminClient } = require('./admin-ws-client');
+const deviceStore = require('../services/device-store');
 
 let registerTrackingIPC = null;
 try {
@@ -88,6 +89,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  deviceStore.markAllOfflineOnStartup();
+  const saved = deviceStore.getAllDevices();
+  console.log('[Main] Loaded', saved.length, 'saved devices from disk');
+
   createWindow();
   registerTrackingIPC(adminClient);
 
