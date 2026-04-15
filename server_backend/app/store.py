@@ -482,14 +482,24 @@ class PostgresStore(BaseStore):
         query = """
             SELECT command_id, device_id, action, payload, status, created_at_ms, source, dispatched_at_ms, completed_at_ms
             FROM commands
-            WHERE (%s IS NULL OR device_id = %s)
-              AND (%s IS NULL OR action = %s)
-              AND (%s IS NULL OR status = %s)
-            ORDER BY created_at_ms DESC;
         """
+        conditions: List[str] = []
+        params: List[Any] = []
+        if device_id is not None:
+            conditions.append("device_id = %s")
+            params.append(device_id)
+        if action is not None:
+            conditions.append("action = %s")
+            params.append(action)
+        if status is not None:
+            conditions.append("status = %s")
+            params.append(status)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY created_at_ms DESC;"
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (device_id, device_id, action, action, status, status))
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall()
         return [self._row_to_command(r) for r in rows]
 
@@ -497,14 +507,24 @@ class PostgresStore(BaseStore):
         query = """
             SELECT command_id, device_id, action, status, result, error, executed_at_ms, received_at_ms
             FROM command_responses
-            WHERE (%s IS NULL OR device_id = %s)
-              AND (%s IS NULL OR command_id = %s)
-              AND (%s IS NULL OR action = %s)
-            ORDER BY received_at_ms DESC;
         """
+        conditions: List[str] = []
+        params: List[Any] = []
+        if device_id is not None:
+            conditions.append("device_id = %s")
+            params.append(device_id)
+        if command_id is not None:
+            conditions.append("command_id = %s")
+            params.append(command_id)
+        if action is not None:
+            conditions.append("action = %s")
+            params.append(action)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY received_at_ms DESC;"
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(query, (device_id, device_id, command_id, command_id, action, action))
+                cur.execute(query, tuple(params))
                 rows = cur.fetchall()
         return [
             ResponseItem(

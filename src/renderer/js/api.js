@@ -490,7 +490,7 @@
 
   function getDeviceColor(deviceId) {
     if (deviceColors.has(deviceId)) return deviceColors.get(deviceId);
-    const index = deviceColors.size % colorOrder.length;
+      const index = deviceColors.size % colorOrder.length;
     const color = colorOrder[index];
     deviceColors.set(deviceId, color);
     return color;
@@ -747,11 +747,11 @@
           await window.trackingBridge.reject(targetDeviceId, {});
         }
       } else {
-        const action = approved ? 'tracking_approved' : 'tracking_rejected';
-        const payload = approved
-          ? { approved_by: 'electron-admin', approved_at: new Date().toISOString() }
-          : { reason: 'Permission denied by admin', denied_at: new Date().toISOString() };
-        await api.sendCommand(action, payload, targetDeviceId);
+    const action = approved ? 'tracking_approved' : 'tracking_rejected';
+    const payload = approved
+      ? { approved_by: 'electron-admin', approved_at: new Date().toISOString() }
+      : { reason: 'Permission denied by admin', denied_at: new Date().toISOString() };
+      await api.sendCommand(action, payload, targetDeviceId);
       }
       trackingPendingRequests.delete(targetDeviceId);
       renderTrackingRequestBanners();
@@ -968,7 +968,7 @@
 
         const visual = trackingVisuals.get(deviceId);
         if (visual && visual.marker && visual.marker.getOpacity() > 0) {
-          const trackingMap = getTrackingMap();
+    const trackingMap = getTrackingMap();
           if (trackingMap) {
             trackingMap.setView(visual.marker.getLatLng(), Math.max(trackingMap.getZoom(), 15), { animate: true });
           }
@@ -3054,8 +3054,8 @@
         gaugeFill.style.strokeDashoffset = String(circumference);
       } else {
         gaugeFill.style.stroke = speed > 60 ? 'var(--danger)' : (speed > 50 ? 'var(--warning)' : 'var(--primary)');
-        gaugeFill.style.strokeDashoffset = String(circumference * (1 - Math.min(speed / 80, 1)));
-      }
+      gaugeFill.style.strokeDashoffset = String(circumference * (1 - Math.min(speed / 80, 1)));
+    }
     }
 
     // --- live insights + quick snapshot ---
