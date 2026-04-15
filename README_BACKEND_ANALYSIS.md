@@ -273,11 +273,6 @@ backend1/
     data/
     docs/
       ELECTRON_ADMIN.md
-scripts/
-  run_simulators.py
-  simulate_mobile_tracking_ws.py
-  simulate_mobile.py
-  simulate_raspi.py
 server_backend/
   README.md
   requirements.txt
