@@ -3,6 +3,12 @@
 const { BrowserWindow, ipcMain } = require('electron');
 const trackingHandler = require('../services/tracking-handler');
 const deviceStore = require('../services/device-store');
+const {
+  loadAllDevices,
+  loadGpsHistory,
+  savePresenceHistoryLog,
+  loadPresenceHistoryLogs,
+} = require('../services/supabase');
 
 let isRegistered = false;
 
@@ -53,6 +59,43 @@ function normalizeStoredDevice(device) {
   return normalized;
 }
 
+function toFiniteNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function normalizeSupabaseDevice(device, forceOffline = false) {
+  if (!device || typeof device !== 'object') return null;
+
+  const deviceId = String(device.device_id || '').trim();
+  if (!deviceId) return null;
+
+  const latitude = toFiniteNumber(device.last_lat);
+  const longitude = toFiniteNumber(device.last_lng);
+  const lastSeen = device.last_seen || device.first_seen || null;
+  const rawStatus = String(device.status || '').trim().toLowerCase();
+  const status = forceOffline
+    ? 'offline'
+    : (rawStatus === 'online' ? 'online' : 'offline');
+
+  return {
+    ...device,
+    device_id: deviceId,
+    status,
+    connected_at: device.connected_at || null,
+    last_seen: lastSeen,
+    last_location: latitude != null && longitude != null
+      ? {
+          lat: latitude,
+          lng: longitude,
+          latitude,
+          longitude,
+          timestamp: lastSeen,
+        }
+      : null,
+  };
+}
+
 function registerTrackingIPC(adminClient) {
   if (isRegistered) return;
   if (!adminClient) {
@@ -62,6 +105,13 @@ function registerTrackingIPC(adminClient) {
 
   ipcMain.handle('get-device-list', async () => {
     try {
+      const supabaseDevices = await loadAllDevices()
+        .then((items) => items.map((item) => normalizeSupabaseDevice(item, true)).filter(Boolean))
+        .catch((err) => {
+          console.warn('[TrackingIPC] Failed to load Supabase devices for merge:', buildSafeError(err));
+          return [];
+        });
+
       const saved = deviceStore
         .getAllDevices()
         .map((item) => normalizeStoredDevice(item))
@@ -70,6 +120,10 @@ function registerTrackingIPC(adminClient) {
       const active = trackingHandler.getDeviceList();
 
       const merged = new Map();
+
+      for (const device of supabaseDevices) {
+        merged.set(device.device_id, device);
+      }
 
       for (const device of saved) {
         merged.set(device.device_id, device);
@@ -107,6 +161,71 @@ function registerTrackingIPC(adminClient) {
     }
   });
 
+  ipcMain.handle('supabase:get-devices', async (event) => {
+    try {
+      const devices = await loadAllDevices()
+        .then((items) => items.map((item) => normalizeSupabaseDevice(item, true)).filter(Boolean));
+
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('tracking:devices_update', devices);
+      }
+
+      return {
+        success: true,
+        data: devices,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: buildSafeError(err, 'Failed to load Supabase devices'),
+        data: [],
+      };
+    }
+  });
+
+  ipcMain.handle('supabase:get-gps-history', async (_event, deviceId, limit = 50) => {
+    const targetDeviceId = String(deviceId || '').trim();
+    if (!targetDeviceId) {
+      return { success: false, error: 'deviceId is required', data: [] };
+    }
+
+    try {
+      const data = await loadGpsHistory(targetDeviceId, limit);
+      return { success: true, data };
+    } catch (err) {
+      return {
+        success: false,
+        error: buildSafeError(err, 'Failed to load GPS history'),
+        data: [],
+      };
+    }
+  });
+
+  ipcMain.handle('supabase:save-presence-history', async (_event, entry = {}) => {
+    try {
+      await savePresenceHistoryLog(entry);
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: buildSafeError(err, 'Failed to save presence history'),
+      };
+    }
+  });
+
+  ipcMain.handle('supabase:get-presence-history', async (_event, options = {}) => {
+    try {
+      const data = await loadPresenceHistoryLogs(options);
+      return { success: true, data };
+    } catch (err) {
+      return {
+        success: false,
+        error: buildSafeError(err, 'Failed to load presence history'),
+        data: [],
+      };
+    }
+  });
+
   ipcMain.handle('send-command', async (_event, deviceId, action, payload = {}) => {
     const targetDeviceId = String(deviceId || '').trim();
     const commandAction = String(action || '').trim();
@@ -118,8 +237,11 @@ function registerTrackingIPC(adminClient) {
       return { success: false, error: 'action is required' };
     }
 
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
     try {
-      const data = await adminClient.sendCommand(commandAction, payload, targetDeviceId);
+      trackingHandler.recordCommandSent(targetDeviceId, commandAction, requestId);
+      const data = await adminClient.sendCommand(commandAction, payload, targetDeviceId, requestId);
       return { success: true, data };
     } catch (err) {
       return { success: false, error: buildSafeError(err, 'Failed to send command') };
@@ -132,9 +254,10 @@ function registerTrackingIPC(adminClient) {
       return { ok: false, error: 'deviceId is required' };
     }
 
-    const requestId = `req-${Date.now()}`;
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     try {
+      trackingHandler.recordCommandSent(targetDeviceId, 'get_gps', requestId);
       await adminClient.sendCommand('get_gps', {}, targetDeviceId, requestId);
       return { ok: true, requestId };
     } catch (err) {

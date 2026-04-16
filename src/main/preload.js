@@ -320,6 +320,9 @@ contextBridge.exposeInMainWorld('trackingBridge', {
   sendCommand: (deviceId, action, payload = {}) =>
     unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
   getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
+  getSupabaseDevices: () => unwrapResponse(ipcRenderer.invoke('supabase:get-devices')),
+  getSupabaseGpsHistory: (deviceId, limit = 50) =>
+    unwrapResponse(ipcRenderer.invoke('supabase:get-gps-history', deviceId, limit)),
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -330,6 +333,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMobileLocation: (callback) => addTrackingListener('mobile:location', callback),
   onMobileGpsResponse: (callback) => addTrackingListener('mobile:gps_response', callback),
   getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
+  getSupabaseDevices: () => unwrapResponse(ipcRenderer.invoke('supabase:get-devices')),
+  getSupabaseGpsHistory: (deviceId, limit = 50) =>
+    unwrapResponse(ipcRenderer.invoke('supabase:get-gps-history', deviceId, limit)),
   sendCommand: (deviceId, action, payload = {}) =>
     unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
 });

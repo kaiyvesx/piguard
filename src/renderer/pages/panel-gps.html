@@ -81,4 +81,51 @@
       <div class="info-row"><span class="label">Modem</span><span class="value" id="floatModem">-</span></div>
     </div>
   </div>
+
+  <div class="presence-history-modal" id="presenceHistoryModal" hidden>
+    <div class="presence-history-backdrop" id="presenceHistoryBackdrop"></div>
+    <section class="presence-history-dialog" role="dialog" aria-modal="true" aria-labelledby="presenceHistoryTitle">
+      <header class="presence-history-header">
+        <div class="presence-history-head-copy">
+          <h3 class="presence-history-title" id="presenceHistoryTitle">Tracking History</h3>
+          <div class="presence-history-subtitle" id="presenceHistorySubtitle">RasPi only</div>
+        </div>
+        <div class="presence-history-head-actions">
+          <button type="button" class="presence-history-export-btn" id="presenceHistoryExportBtn">Export CSV</button>
+          <button type="button" class="presence-history-close" id="presenceHistoryCloseBtn" aria-label="Close history">Close</button>
+        </div>
+      </header>
+
+      <div class="presence-history-summary-grid">
+        <div class="presence-history-summary-card" id="presenceHistoryRaspiCard">
+          <div class="presence-history-summary-label">RasPi State</div>
+          <div class="presence-history-summary-value" id="presenceHistoryRaspiState">Offline</div>
+        </div>
+        <div class="presence-history-summary-card" id="presenceHistoryMobileCard">
+          <div class="presence-history-summary-label">Mobile Online</div>
+          <div class="presence-history-summary-value" id="presenceHistoryMobileOnline">0</div>
+        </div>
+        <div class="presence-history-summary-card">
+          <div class="presence-history-summary-label">Tracked Records</div>
+          <div class="presence-history-summary-value" id="presenceHistoryTotalRecords">0</div>
+        </div>
+      </div>
+
+      <div class="presence-history-track-actions">
+        <button type="button" class="presence-history-track-btn" id="historyTrackRaspiBtn">Track RasPi</button>
+        <button type="button" class="presence-history-track-btn" id="historyTrackMobileBtn">Track Mobile Panel</button>
+      </div>
+
+      <div class="presence-history-mobile-block" id="presenceHistoryMobileBlock">
+        <div class="presence-history-mobile-title">Mobile Devices (Individual Track)</div>
+        <div class="presence-history-mobile-list" id="presenceHistoryMobileList">
+          <div class="presence-history-empty">No mobile devices discovered yet.</div>
+        </div>
+      </div>
+
+      <div class="presence-history-log-list" id="presenceHistoryList">
+        <div class="presence-history-empty">No tracking history yet.</div>
+      </div>
+    </section>
+  </div>
 </div>

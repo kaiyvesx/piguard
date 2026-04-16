@@ -1,7 +1,7 @@
 #panel-mobile .tracking-shell {
   position: absolute;
   inset: 0;
-  display: flex;
+  display: block;
   background:
     radial-gradient(1200px 560px at -12% -18%, rgba(28, 122, 255, 0.2), transparent 56%),
     radial-gradient(900px 420px at 112% 112%, rgba(47, 183, 138, 0.12), transparent 52%),
@@ -11,6 +11,10 @@
 }
 
 #panel-mobile .tracking-devices-pane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
   width: min(30%, 430px);
   min-width: 310px;
   max-width: 460px;
@@ -247,9 +251,10 @@
 }
 
 #panel-mobile .tracking-map-pane {
-  position: relative;
-  flex: 1;
+  position: absolute;
+  inset: 0;
   min-width: 0;
+  z-index: 1;
 }
 
 #panel-mobile #mobile-map {
@@ -261,7 +266,7 @@
 #panel-mobile .tracking-map-badge {
   position: absolute;
   top: 14px;
-  left: 14px;
+  right: 14px;
   z-index: 3;
   background: rgba(5, 18, 35, 0.85);
   border: 1px solid rgba(84, 147, 219, 0.52);
@@ -595,33 +600,20 @@
 }
 
 @media (max-width: 900px) {
-  #panel-mobile .tracking-shell {
-    flex-direction: column;
-  }
-
   #panel-mobile .tracking-devices-pane {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    max-height: 44%;
-    border-right: 0;
-    border-bottom: 1px solid rgba(88, 131, 183, 0.28);
+    width: min(82vw, 360px);
+    min-width: 240px;
+    max-width: 360px;
+    max-height: none;
+    border-right: 1px solid rgba(88, 131, 183, 0.28);
+    border-bottom: 0;
   }
 
   #panel-mobile .tracking-devices-pane.is-collapsed {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-    max-height: 52px;
-  }
-
-  #panel-mobile .tracking-devices-pane.is-collapsed .tracking-pane-header {
-    justify-content: flex-end;
-    padding: 10px 12px;
-  }
-
-  #panel-mobile .tracking-map-pane {
-    min-height: 300px;
+    width: 52px;
+    min-width: 52px;
+    max-width: 52px;
+    max-height: none;
   }
 
   #panel-mobile .tracking-map-badge {

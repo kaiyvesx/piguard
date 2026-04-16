@@ -303,6 +303,21 @@
   const mobileGpsCoordsEl = document.getElementById('mobileGpsCoords');
   const trackingMapHintEl = document.getElementById('trackingMapHint');
   const trackingRequestsEl = document.getElementById('trackingRequestsMobile') || document.getElementById('trackingRequestsSidebar') || document.getElementById('trackingRequests');
+  const presenceHistoryModalEl = document.getElementById('presenceHistoryModal');
+  const presenceHistoryBackdropEl = document.getElementById('presenceHistoryBackdrop');
+  const presenceHistoryCloseBtnEl = document.getElementById('presenceHistoryCloseBtn');
+  const presenceHistorySubtitleEl = document.getElementById('presenceHistorySubtitle');
+  const presenceHistoryListEl = document.getElementById('presenceHistoryList');
+  const presenceHistoryMobileListEl = document.getElementById('presenceHistoryMobileList');
+  const presenceHistoryExportScopeEl = document.getElementById('presenceHistoryExportScope');
+  const presenceHistoryExportBtnEl = document.getElementById('presenceHistoryExportBtn');
+  const presenceHistoryRaspiCardEl = document.getElementById('presenceHistoryRaspiCard');
+  const presenceHistoryMobileCardEl = document.getElementById('presenceHistoryMobileCard');
+  const presenceHistoryRaspiStateEl = document.getElementById('presenceHistoryRaspiState');
+  const presenceHistoryMobileOnlineEl = document.getElementById('presenceHistoryMobileOnline');
+  const presenceHistoryTotalRecordsEl = document.getElementById('presenceHistoryTotalRecords');
+  const historyTrackRaspiBtnEl = document.getElementById('historyTrackRaspiBtn');
+  const historyTrackMobileBtnEl = document.getElementById('historyTrackMobileBtn');
 
   let selectedNumber = null;
   let lastBase = null;
@@ -346,8 +361,23 @@
   const OFFLINE_MARKER_COLOR = '#98a2b3';
   const TRACKING_MANILA_CENTER = [14.5995, 120.9842];
   const TRACKING_PANE_COLLAPSED_KEY = 'pi-mobile-tracking-pane-collapsed';
+  const RASPI_HISTORY_DEVICE_ID = 'raspi-01';
+  const PRESENCE_HISTORY_MAX_ITEMS = 400;
+  const PRESENCE_LOCATION_LOG_INTERVAL_MS = 30000;
+  const PRESENCE_HISTORY_LOAD_LIMIT = 220;
+  const PRESENCE_HISTORY_MIN_MOVE_DELTA = 0.00012;
   let selectedTrackingDeviceId = '';
   let trackingUiInitialized = false;
+  let presenceHistoryViewSource = 'raspi';
+  let presenceHistoryLoaded = false;
+  let presenceHistoryModalOpen = false;
+  const presenceHistoryEntries = [];
+  const presenceStateByKey = new Map();
+  const presenceLastLocationLoggedAt = new Map();
+
+  if (presenceHistoryModalEl && presenceHistoryModalEl.parentElement !== document.body) {
+    document.body.appendChild(presenceHistoryModalEl);
+  }
 
   function refreshTrackingLogElements() {
     if (!trackingLogPanelEl || !trackingLogPanelEl.isConnected) {
@@ -532,6 +562,557 @@
     const raw = String(deviceId || '').trim();
     if (raw.length <= 12) return raw;
     return `${raw.slice(0, 8)}...`;
+  }
+
+  function normalizePresenceSource(source) {
+    const raw = String(source || '').trim().toLowerCase();
+    if (raw === 'raspi') return 'raspi';
+    if (raw === 'mobile') return 'mobile';
+    return 'mobile';
+  }
+
+  function getPresenceKey(source, deviceId) {
+    return `${normalizePresenceSource(source)}:${String(deviceId || '').trim()}`;
+  }
+
+  function ensurePresenceState(source, deviceId) {
+    const normalizedSource = normalizePresenceSource(source);
+    const id = String(deviceId || '').trim();
+    if (!id) return null;
+
+    const key = getPresenceKey(normalizedSource, id);
+    if (!presenceStateByKey.has(key)) {
+      const now = Date.now();
+      presenceStateByKey.set(key, {
+        source: normalizedSource,
+        device_id: id,
+        status: 'offline',
+        status_since_ms: now,
+        online_started_ms: null,
+        offline_started_ms: now,
+        online_start_lat: null,
+        online_start_lng: null,
+        last_lat: null,
+        last_lng: null,
+        last_seen_ms: null,
+      });
+    }
+
+    return presenceStateByKey.get(key);
+  }
+
+  function toSourceLabel(source) {
+    return source === 'raspi' ? 'RasPi' : 'Mobile';
+  }
+
+  function buildHistoryDetail(entry) {
+    if (!entry) return '-';
+    const lat = toNum(entry.latitude);
+    const lng = toNum(entry.longitude);
+    const startLat = toNum(entry.start_lat);
+    const startLng = toNum(entry.start_lng);
+    const endLat = toNum(entry.end_lat);
+    const endLng = toNum(entry.end_lng);
+
+    if (entry.event_type === 'online') {
+      const loc = lat != null && lng != null
+        ? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+        : 'no coordinates';
+      return `online at ${loc}`;
+    }
+
+    if (entry.event_type === 'offline') {
+      const loc = endLat != null && endLng != null
+        ? `${endLat.toFixed(5)}, ${endLng.toFixed(5)}`
+        : (lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'no coordinates');
+      const startLoc = startLat != null && startLng != null
+        ? ` | started ${startLat.toFixed(5)}, ${startLng.toFixed(5)}`
+        : '';
+      return `offline at ${loc}${startLoc}`;
+    }
+
+    if (lat != null && lng != null) {
+      return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+
+    return entry.status || '-';
+  }
+
+  async function persistPresenceHistoryEntry(entry) {
+    if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') return;
+
+    try {
+      const result = await window.electronAPI.invoke('supabase:save-presence-history', entry);
+      if (result && result.success === false) {
+        console.warn('[History] Failed to persist presence history:', result.error || 'Unknown error');
+      }
+    } catch (err) {
+      console.warn('[History] Failed to persist presence history:', err && err.message ? err.message : err);
+    }
+  }
+
+  function normalizeHistoryEntry(rawEntry = {}) {
+    const meta = rawEntry.meta && typeof rawEntry.meta === 'object' ? rawEntry.meta : {};
+    const eventMs = Number(rawEntry.event_ms || rawEntry.eventMs || meta.event_ms || Date.now());
+    const source = normalizePresenceSource(rawEntry.source || meta.source);
+    const deviceId = String(rawEntry.device_id || rawEntry.deviceId || meta.device_id || '').trim();
+
+    if (!deviceId) return null;
+
+    return {
+      source,
+      device_id: deviceId,
+      event_type: String(rawEntry.event_type || rawEntry.eventType || meta.event_type || 'location').trim().toLowerCase(),
+      status: String(rawEntry.status || meta.status || 'unknown').trim().toLowerCase(),
+      latitude: toNum(rawEntry.latitude ?? rawEntry.lat ?? meta.latitude ?? meta.lat),
+      longitude: toNum(rawEntry.longitude ?? rawEntry.lng ?? meta.longitude ?? meta.lng),
+      start_lat: toNum(rawEntry.start_lat ?? meta.start_lat),
+      start_lng: toNum(rawEntry.start_lng ?? meta.start_lng),
+      end_lat: toNum(rawEntry.end_lat ?? meta.end_lat),
+      end_lng: toNum(rawEntry.end_lng ?? meta.end_lng),
+      online_duration_ms: Number.isFinite(Number(rawEntry.online_duration_ms ?? meta.online_duration_ms))
+        ? Math.max(0, Math.trunc(Number(rawEntry.online_duration_ms ?? meta.online_duration_ms)))
+        : null,
+      offline_duration_ms: Number.isFinite(Number(rawEntry.offline_duration_ms ?? meta.offline_duration_ms))
+        ? Math.max(0, Math.trunc(Number(rawEntry.offline_duration_ms ?? meta.offline_duration_ms)))
+        : null,
+      event_ms: Number.isFinite(eventMs) ? Math.trunc(eventMs) : Date.now(),
+      event_at: normalizeIsoTime(rawEntry.event_at || rawEntry.eventAt || meta.event_at, new Date().toISOString()),
+      meta,
+    };
+  }
+
+  function appendPresenceHistoryEntry(rawEntry, options = {}) {
+    const entry = normalizeHistoryEntry(rawEntry);
+    if (!entry) return;
+
+    const signature = `${entry.source}|${entry.device_id}|${entry.event_type}|${entry.event_ms}|${entry.status}`;
+    const duplicate = presenceHistoryEntries.find((item) => {
+      const itemSig = `${item.source}|${item.device_id}|${item.event_type}|${item.event_ms}|${item.status}`;
+      return itemSig === signature;
+    });
+    if (duplicate) return;
+
+    presenceHistoryEntries.unshift(entry);
+    while (presenceHistoryEntries.length > PRESENCE_HISTORY_MAX_ITEMS) {
+      presenceHistoryEntries.pop();
+    }
+
+    if (options.persist !== false) {
+      void persistPresenceHistoryEntry({
+        source: entry.source,
+        device_id: entry.device_id,
+        event_type: entry.event_type,
+        status: entry.status,
+        latitude: entry.latitude,
+        longitude: entry.longitude,
+        event_ms: entry.event_ms,
+        event_at: entry.event_at,
+        meta: {
+          start_lat: entry.start_lat,
+          start_lng: entry.start_lng,
+          end_lat: entry.end_lat,
+          end_lng: entry.end_lng,
+          online_duration_ms: entry.online_duration_ms,
+          offline_duration_ms: entry.offline_duration_ms,
+          ...(entry.meta || {}),
+        },
+      });
+    }
+
+    renderPresenceHistoryModal();
+  }
+
+  async function loadPresenceHistoryFromSupabase() {
+    if (presenceHistoryLoaded) return;
+    presenceHistoryLoaded = true;
+
+    if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') return;
+
+    try {
+      const result = await window.electronAPI.invoke('supabase:get-presence-history', {
+        limit: PRESENCE_HISTORY_LOAD_LIMIT,
+      });
+      const rows = Array.isArray(result)
+        ? result
+        : (result && Array.isArray(result.data) ? result.data : []);
+      rows.forEach((row) => appendPresenceHistoryEntry(row, { persist: false }));
+    } catch (err) {
+      console.warn('[History] Failed to load presence history:', err && err.message ? err.message : err);
+    }
+  }
+
+  function normalizeHistoryViewSource(source) {
+    const raw = String(source || '').trim().toLowerCase();
+    if (raw === 'raspi' || raw === 'mobile' || raw === 'all') return raw;
+    return 'raspi';
+  }
+
+  function getPresenceHistoryRowsForSource(source) {
+    const normalized = normalizeHistoryViewSource(source === 'current' ? presenceHistoryViewSource : source);
+    if (normalized === 'all') {
+      return presenceHistoryEntries.slice(0, 180);
+    }
+
+    return presenceHistoryEntries
+      .filter((entry) => entry.source === normalized)
+      .slice(0, 180);
+  }
+
+  function renderPresenceHistorySummary() {
+    if (!presenceHistoryRaspiStateEl || !presenceHistoryMobileOnlineEl || !presenceHistoryTotalRecordsEl) return;
+
+    const viewSource = normalizeHistoryViewSource(presenceHistoryViewSource);
+    const rows = getPresenceHistoryRowsForSource(viewSource);
+
+    const raspiState = ensurePresenceState('raspi', RASPI_HISTORY_DEVICE_ID);
+    const raspiStatus = raspiState ? raspiState.status : 'offline';
+    presenceHistoryRaspiStateEl.textContent = raspiStatus;
+
+    const mobileOnline = Array.from(trackingDevices.values())
+      .filter((device) => String(device?.status || '').trim().toLowerCase() === 'online')
+      .length;
+    presenceHistoryMobileOnlineEl.textContent = String(mobileOnline);
+
+    presenceHistoryTotalRecordsEl.textContent = String(rows.length);
+
+    if (presenceHistorySubtitleEl) {
+      presenceHistorySubtitleEl.textContent = viewSource === 'mobile'
+        ? 'Mobile only'
+        : (viewSource === 'raspi' ? 'RasPi only' : 'RasPi + Mobile');
+    }
+
+    if (presenceHistoryRaspiCardEl) {
+      presenceHistoryRaspiCardEl.hidden = viewSource === 'mobile';
+    }
+    if (presenceHistoryMobileCardEl) {
+      presenceHistoryMobileCardEl.hidden = viewSource === 'raspi';
+    }
+  }
+
+  function renderPresenceHistoryMobileList() {
+    if (!presenceHistoryMobileListEl) return;
+
+    const rows = Array.from(trackingDevices.values())
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === 'online' ? -1 : 1;
+        const aSeen = new Date(a.last_seen || 0).getTime();
+        const bSeen = new Date(b.last_seen || 0).getTime();
+        return bSeen - aSeen;
+      })
+      .slice(0, 12);
+
+    if (!rows.length) {
+      presenceHistoryMobileListEl.innerHTML = '<div class="presence-history-empty">No mobile devices discovered yet.</div>';
+      return;
+    }
+
+    presenceHistoryMobileListEl.innerHTML = rows.map((device) => {
+      const deviceId = String(device.device_id || '').trim();
+      const status = String(device.status || 'offline').trim().toLowerCase() === 'online' ? 'online' : 'offline';
+      const location = device.last_location && typeof device.last_location === 'object'
+        ? device.last_location
+        : null;
+      const lat = toNum(location && (location.latitude ?? location.lat));
+      const lng = toNum(location && (location.longitude ?? location.lng));
+      const coordText = lat != null && lng != null
+        ? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+        : 'No coordinates';
+
+      return `<div class="presence-history-mobile-item">
+        <div class="presence-history-mobile-meta">
+          <div class="presence-history-mobile-name">${escapeHtml(shortDeviceId(deviceId))}</div>
+          <div class="presence-history-mobile-state">${escapeHtml(status)} | ${escapeHtml(coordText)}</div>
+        </div>
+        <button type="button" class="presence-history-mobile-track" data-history-track-mobile="${escapeHtml(deviceId)}">Track</button>
+      </div>`;
+    }).join('');
+  }
+
+  function renderPresenceHistoryLogs() {
+    if (!presenceHistoryListEl) return;
+
+    const rows = getPresenceHistoryRowsForSource(presenceHistoryViewSource);
+
+    if (!rows.length) {
+      presenceHistoryListEl.innerHTML = '<div class="presence-history-empty">No tracking history yet.</div>';
+      return;
+    }
+
+    presenceHistoryListEl.innerHTML = rows.map((entry) => {
+      const kind = entry.event_type === 'online'
+        ? 'online'
+        : (entry.event_type === 'offline' ? 'offline' : 'location');
+
+      return `<div class="presence-history-log-line kind-${escapeHtml(kind)}">
+        <span class="presence-history-log-time">[${escapeHtml(fmtTime(entry.event_at || entry.event_ms))}]</span>
+        <span class="presence-history-log-source">${escapeHtml(toSourceLabel(entry.source))} ${escapeHtml(shortDeviceId(entry.device_id))}</span>
+        <span class="presence-history-log-detail">${escapeHtml(buildHistoryDetail(entry))}</span>
+      </div>`;
+    }).join('');
+  }
+
+  function renderPresenceHistoryModal() {
+    const mobileBlockEl = document.getElementById('presenceHistoryMobileBlock');
+    const viewSource = normalizeHistoryViewSource(presenceHistoryViewSource);
+
+    if (mobileBlockEl) {
+      mobileBlockEl.hidden = viewSource !== 'mobile';
+    }
+
+    if (historyTrackRaspiBtnEl) {
+      historyTrackRaspiBtnEl.hidden = viewSource === 'mobile';
+    }
+    if (historyTrackMobileBtnEl) {
+      historyTrackMobileBtnEl.hidden = viewSource === 'raspi';
+    }
+
+    renderPresenceHistorySummary();
+    if (viewSource === 'mobile') {
+      renderPresenceHistoryMobileList();
+    }
+    renderPresenceHistoryLogs();
+  }
+
+  function setPresenceHistoryModalOpen(open, source = null) {
+    if (!presenceHistoryModalEl) return;
+
+    if (source) {
+      presenceHistoryViewSource = normalizeHistoryViewSource(source);
+    }
+
+    presenceHistoryViewSource = normalizeHistoryViewSource(presenceHistoryViewSource);
+
+    presenceHistoryModalOpen = !!open;
+    presenceHistoryModalEl.hidden = !presenceHistoryModalOpen;
+
+    if (presenceHistoryModalOpen) {
+      renderPresenceHistoryModal();
+    }
+  }
+
+  function toCsvCell(value) {
+    const text = String(value == null ? '' : value);
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  function exportPresenceHistoryCsv(scope = 'current') {
+    const normalizedScope = String(scope || 'current').trim().toLowerCase();
+    const source = normalizedScope === 'both'
+      ? 'all'
+      : (normalizedScope === 'current' ? presenceHistoryViewSource : normalizedScope);
+
+    const rows = getPresenceHistoryRowsForSource(source);
+    if (!rows.length) {
+      console.warn('[History] No records available to export.');
+      return;
+    }
+
+    const header = [
+      'event_at',
+      'event_ms',
+      'source',
+      'device_id',
+      'event_type',
+      'status',
+      'latitude',
+      'longitude',
+      'start_lat',
+      'start_lng',
+      'end_lat',
+      'end_lng',
+    ];
+
+    const lines = [header.map((h) => toCsvCell(h)).join(',')];
+    rows.forEach((entry) => {
+      lines.push([
+        toCsvCell(entry.event_at || ''),
+        toCsvCell(entry.event_ms || ''),
+        toCsvCell(entry.source || ''),
+        toCsvCell(entry.device_id || ''),
+        toCsvCell(entry.event_type || ''),
+        toCsvCell(entry.status || ''),
+        toCsvCell(entry.latitude != null ? entry.latitude : ''),
+        toCsvCell(entry.longitude != null ? entry.longitude : ''),
+        toCsvCell(entry.start_lat != null ? entry.start_lat : ''),
+        toCsvCell(entry.start_lng != null ? entry.start_lng : ''),
+        toCsvCell(entry.end_lat != null ? entry.end_lat : ''),
+        toCsvCell(entry.end_lng != null ? entry.end_lng : ''),
+      ].join(','));
+    });
+
+    const csv = `${lines.join('\n')}\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fileScope = source === 'all' ? 'both' : source;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `tracking-history-${fileScope}-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function openPresenceHistoryModal(source = 'raspi') {
+    setPresenceHistoryModalOpen(true, source);
+    if (presenceHistoryExportScopeEl) {
+      presenceHistoryExportScopeEl.value = 'current';
+    }
+    void loadPresenceHistoryFromSupabase();
+  }
+
+  function closePresenceHistoryModal() {
+    setPresenceHistoryModalOpen(false);
+  }
+
+  function trackRaspiFromHistory() {
+    closePresenceHistoryModal();
+    if (typeof switchPanel === 'function') {
+      switchPanel('gps');
+    }
+    if (typeof centerOnTracker === 'function') {
+      centerOnTracker();
+    }
+  }
+
+  function trackMobilePanelFromHistory() {
+    closePresenceHistoryModal();
+    if (typeof switchPanel === 'function') {
+      switchPanel('mobile');
+    }
+    fitMapToOnlineDevices(true);
+  }
+
+  function trackSpecificMobileFromHistory(deviceId) {
+    const id = String(deviceId || '').trim();
+    if (!id) return;
+
+    trackMobilePanelFromHistory();
+    focusTrackingDevice(id);
+  }
+
+  function recordPresenceStatusTransition(source, deviceId, status, latitude, longitude, eventMs, reason = '') {
+    const state = ensurePresenceState(source, deviceId);
+    if (!state) return;
+
+    const nextStatus = String(status || '').trim().toLowerCase() === 'online' ? 'online' : 'offline';
+    const lat = toNum(latitude);
+    const lng = toNum(longitude);
+    const nowMs = Number.isFinite(Number(eventMs)) ? Math.trunc(Number(eventMs)) : Date.now();
+
+    if (lat != null && lng != null) {
+      state.last_lat = lat;
+      state.last_lng = lng;
+      state.last_seen_ms = nowMs;
+    }
+
+    if (state.status === nextStatus) {
+      state.status_since_ms = state.status_since_ms || nowMs;
+      return;
+    }
+
+    if (nextStatus === 'online') {
+      const offlineDuration = state.offline_started_ms ? Math.max(0, nowMs - state.offline_started_ms) : null;
+      const startLat = lat != null ? lat : state.last_lat;
+      const startLng = lng != null ? lng : state.last_lng;
+
+      state.status = 'online';
+      state.status_since_ms = nowMs;
+      state.online_started_ms = nowMs;
+      state.offline_started_ms = null;
+      state.online_start_lat = startLat;
+      state.online_start_lng = startLng;
+
+      appendPresenceHistoryEntry({
+        source: state.source,
+        device_id: state.device_id,
+        event_type: 'online',
+        status: 'online',
+        latitude: startLat,
+        longitude: startLng,
+        start_lat: startLat,
+        start_lng: startLng,
+        offline_duration_ms: offlineDuration,
+        event_ms: nowMs,
+        event_at: new Date(nowMs).toISOString(),
+        meta: reason ? { reason } : {},
+      });
+
+      return;
+    }
+
+    const onlineDuration = state.online_started_ms ? Math.max(0, nowMs - state.online_started_ms) : null;
+    const startLat = state.online_start_lat;
+    const startLng = state.online_start_lng;
+    const endLat = lat != null ? lat : state.last_lat;
+    const endLng = lng != null ? lng : state.last_lng;
+
+    state.status = 'offline';
+    state.status_since_ms = nowMs;
+    state.offline_started_ms = nowMs;
+    state.online_started_ms = null;
+
+    appendPresenceHistoryEntry({
+      source: state.source,
+      device_id: state.device_id,
+      event_type: 'offline',
+      status: 'offline',
+      latitude: endLat,
+      longitude: endLng,
+      start_lat: startLat,
+      start_lng: startLng,
+      end_lat: endLat,
+      end_lng: endLng,
+      online_duration_ms: onlineDuration,
+      event_ms: nowMs,
+      event_at: new Date(nowMs).toISOString(),
+      meta: reason ? { reason } : {},
+    });
+  }
+
+  function recordPresenceLocation(source, deviceId, latitude, longitude, eventMs, reason = '') {
+    const state = ensurePresenceState(source, deviceId);
+    if (!state) return;
+
+    const lat = toNum(latitude);
+    const lng = toNum(longitude);
+    if (lat == null || lng == null) return;
+
+    const nowMs = Number.isFinite(Number(eventMs)) ? Math.trunc(Number(eventMs)) : Date.now();
+    const presenceKey = getPresenceKey(state.source, state.device_id);
+
+    const movedEnough = state.last_lat == null || state.last_lng == null
+      || Math.abs(lat - state.last_lat) >= PRESENCE_HISTORY_MIN_MOVE_DELTA
+      || Math.abs(lng - state.last_lng) >= PRESENCE_HISTORY_MIN_MOVE_DELTA;
+
+    state.last_lat = lat;
+    state.last_lng = lng;
+    state.last_seen_ms = nowMs;
+
+    if (state.status !== 'online') {
+      recordPresenceStatusTransition(state.source, state.device_id, 'online', lat, lng, nowMs, reason || 'location_update');
+    }
+
+    const lastLoggedAt = Number(presenceLastLocationLoggedAt.get(presenceKey) || 0);
+    if (!movedEnough && nowMs - lastLoggedAt < PRESENCE_LOCATION_LOG_INTERVAL_MS) {
+      return;
+    }
+
+    presenceLastLocationLoggedAt.set(presenceKey, nowMs);
+
+    appendPresenceHistoryEntry({
+      source: state.source,
+      device_id: state.device_id,
+      event_type: 'location',
+      status: 'online',
+      latitude: lat,
+      longitude: lng,
+      event_ms: nowMs,
+      event_at: new Date(nowMs).toISOString(),
+      meta: reason ? { reason } : {},
+    });
   }
 
   function getLocationFromEvent(event) {
@@ -986,6 +1567,22 @@
     });
   }
 
+  function focusTrackingDevice(deviceId) {
+    const id = String(deviceId || '').trim();
+    if (!id) return;
+
+    selectedTrackingDeviceId = id;
+    renderTrackingCards();
+    refreshTrackingVisuals();
+
+    const visual = trackingVisuals.get(id);
+    if (!visual || !visual.marker || visual.marker.getOpacity() <= 0) return;
+
+    const trackingMap = getTrackingMap();
+    if (!trackingMap) return;
+    trackingMap.setView(visual.marker.getLatLng(), Math.max(trackingMap.getZoom(), 15), { animate: true });
+  }
+
   function initializeTrackingPanelUi() {
     if (trackingUiInitialized) return;
     trackingUiInitialized = true;
@@ -1249,12 +1846,40 @@
       applyDeviceLifecycle(action, deviceId, payload);
       trackingPendingRequests.delete(deviceId);
       renderTrackingRequestBanners();
+      recordPresenceStatusTransition('mobile', deviceId, 'offline', null, null, Date.now(), 'tracking_rejected');
     }
 
     if (action === 'device_online' || action === 'device_offline' || action === 'tracking_session_end') {
       applyDeviceLifecycle(action, deviceId, payload);
       if (action === 'device_online') {
         queuedLifecycleLoggedDevices.delete(deviceId);
+      }
+
+      const lifecycleLocation = getLocationFromEvent(event);
+      const lifecycleMs = new Date(
+        payload.connected_at || payload.disconnected_at || payload.timestamp || Date.now()
+      ).getTime();
+
+      if (action === 'device_online') {
+        recordPresenceStatusTransition(
+          'mobile',
+          deviceId,
+          'online',
+          lifecycleLocation ? lifecycleLocation.latitude : null,
+          lifecycleLocation ? lifecycleLocation.longitude : null,
+          lifecycleMs,
+          action
+        );
+      } else {
+        recordPresenceStatusTransition(
+          'mobile',
+          deviceId,
+          'offline',
+          lifecycleLocation ? lifecycleLocation.latitude : null,
+          lifecycleLocation ? lifecycleLocation.longitude : null,
+          lifecycleMs,
+          action
+        );
       }
     }
 
@@ -1263,7 +1888,12 @@
       const location = getLocationFromEvent(event);
       if (location) {
         updateTrackingDeviceFromLocation(deviceId, location, payload);
+        recordPresenceLocation('mobile', deviceId, location.latitude, location.longitude, new Date(location.timestamp).getTime(), 'location_update');
       }
+    }
+
+    if (action === 'tracking_approved') {
+      recordPresenceStatusTransition('mobile', deviceId, 'online', null, null, Date.now(), action);
     }
 
     const entry = {
@@ -2932,6 +3562,21 @@
     setGpsState(gpsConnected, gpsConnected ? 'GPS: On' : 'GPS: Disconnected');
     const satCount = gps && gps.sat != null ? gps.sat : (points.length > 0 ? points[points.length-1].sat : 'G��');
 
+    const raspiEventMs = points.length > 0
+      ? new Date(points[points.length - 1].ts || Date.now()).getTime()
+      : Date.now();
+    recordPresenceStatusTransition('raspi', RASPI_HISTORY_DEVICE_ID, 'online', lat, lon, raspiEventMs, 'raspi_refresh');
+    if (lat != null && lon != null) {
+      recordPresenceLocation(
+        'raspi',
+        RASPI_HISTORY_DEVICE_ID,
+        lat,
+        lon,
+        raspiEventMs,
+        hasFix ? 'gps_fix' : 'track_fallback'
+      );
+    }
+
     if (locEl) {
       if (lat !== null) {
         // show cached name instantly, then update asynchronously
@@ -3157,6 +3802,7 @@
       const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
       setConnectionState(false, 'RasPi: Disconnected', reason);
       setGpsState(false, 'GPS: Disconnected');
+      recordPresenceStatusTransition('raspi', RASPI_HISTORY_DEVICE_ID, 'offline', null, null, Date.now(), reason);
       lastStatusData = null;
       setCameraConnectionState(`Camera offline: ${reason}`);
       stopCameraMedia();
@@ -3342,6 +3988,31 @@
     cameraSlotMenuCloseBtn.addEventListener('click', hideCameraSlotMenu);
   }
 
+  if (presenceHistoryBackdropEl) {
+    presenceHistoryBackdropEl.addEventListener('click', closePresenceHistoryModal);
+  }
+
+  if (presenceHistoryCloseBtnEl) {
+    presenceHistoryCloseBtnEl.addEventListener('click', closePresenceHistoryModal);
+  }
+
+  if (historyTrackRaspiBtnEl) {
+    historyTrackRaspiBtnEl.addEventListener('click', trackRaspiFromHistory);
+  }
+
+  if (historyTrackMobileBtnEl) {
+    historyTrackMobileBtnEl.addEventListener('click', trackMobilePanelFromHistory);
+  }
+
+  if (presenceHistoryExportBtnEl) {
+    presenceHistoryExportBtnEl.addEventListener('click', () => {
+      const scope = presenceHistoryExportScopeEl
+        ? String(presenceHistoryExportScopeEl.value || 'current').trim().toLowerCase()
+        : 'current';
+      exportPresenceHistoryCsv(scope);
+    });
+  }
+
   document.addEventListener('click', (evt) => {
     if (!cameraSlotMenu || cameraSlotMenu.hidden) return;
     const target = evt.target;
@@ -3352,6 +4023,21 @@
   document.addEventListener('click', (evt) => {
     const target = evt.target;
     if (!target || !target.closest) return;
+
+    const openHistoryBtn = target.closest('.presence-history-open-btn');
+    if (openHistoryBtn) {
+      evt.preventDefault();
+      const source = String(openHistoryBtn.getAttribute('data-history-source') || 'raspi').trim().toLowerCase();
+      openPresenceHistoryModal(source === 'mobile' ? 'mobile' : 'raspi');
+      return;
+    }
+
+    const mobileTrackBtn = target.closest('[data-history-track-mobile]');
+    if (mobileTrackBtn) {
+      evt.preventDefault();
+      trackSpecificMobileFromHistory(mobileTrackBtn.getAttribute('data-history-track-mobile'));
+      return;
+    }
 
     const openLogBtn = target.closest('#trackingLogToggle, #trackingEventLogToggle');
     if (openLogBtn) {
@@ -3373,6 +4059,7 @@
     if (evt.key !== 'Escape') return;
     hideCameraSlotMenu();
     setTrackingLogModalOpen(false);
+    closePresenceHistoryModal();
   });
 
   if (extraNumberInput) {
@@ -3463,6 +4150,11 @@
   }
 
   updateBackendModeUI();
+  void loadPresenceHistoryFromSupabase();
+  setInterval(() => {
+    if (!presenceHistoryModalOpen) return;
+    renderPresenceHistoryModal();
+  }, 1000);
 
   updatePhilippinesClock();
   setInterval(updatePhilippinesClock, 1000);

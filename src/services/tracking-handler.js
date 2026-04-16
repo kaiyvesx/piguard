@@ -2,6 +2,11 @@
 
 const { BrowserWindow } = require('electron');
 const deviceStore = require('./device-store');
+const {
+  upsertDevice,
+  saveGpsLog,
+  saveCommandLog,
+} = require('./supabase');
 
 const devices = new Map();
 
@@ -47,6 +52,32 @@ function ensureDevice(deviceId) {
   }
 
   return devices.get(id);
+}
+
+function logSupabaseError(scope, err) {
+  const message = err && err.message ? err.message : String(err || 'Unknown error');
+  console.warn(`[TrackingHandler] Supabase ${scope} failed:`, message);
+}
+
+function recordCommandSent(deviceId, action, requestId) {
+  const id = String(deviceId || '').trim();
+  const commandAction = String(action || '').trim().toLowerCase();
+  if (!id || !commandAction) return;
+
+  saveCommandLog(id, commandAction, requestId, 'sent')
+    .catch((err) => logSupabaseError('saveCommandLog(sent)', err));
+}
+
+function recordCommandResponse(msg) {
+  const id = String(msg?.device_id || '').trim();
+  const action = String(msg?.action || '').trim().toLowerCase();
+  if (!id || !action) return;
+
+  const requestId = String(msg?.request_id || '').trim();
+  const status = String(msg?.status || '').trim().toLowerCase() || 'unknown';
+
+  saveCommandLog(id, action, requestId, status)
+    .catch((err) => logSupabaseError('saveCommandLog(response)', err));
 }
 
 function toPublicDevice(device) {
@@ -234,6 +265,12 @@ function _onGpsCommandResponse(msg, client) {
   });
   console.log('[TrackingHandler] Saved GPS to disk:', deviceId, latitude, longitude);
 
+  upsertDevice(deviceId, 'online', latitude, longitude)
+    .catch((err) => logSupabaseError('upsertDevice', err));
+
+  saveGpsLog(deviceId, latitude, longitude, requestId)
+    .catch((err) => logSupabaseError('saveGpsLog', err));
+
   sendToRenderer(client, 'mobile:gps_response', {
     deviceId,
     lat: latitude,
@@ -281,6 +318,7 @@ function handle(msg, client) {
 }
 
 function handleCommandResponse(msg, client) {
+  recordCommandResponse(msg);
   _onGpsCommandResponse(msg, client);
 }
 
@@ -296,6 +334,7 @@ module.exports = {
   handles,
   handle,
   handleCommandResponse,
+  recordCommandSent,
   getDeviceList,
   getState,
 };
