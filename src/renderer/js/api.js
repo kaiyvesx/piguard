@@ -25,7 +25,7 @@
         }
       })
       .catch((err) => {
-        console.warn('[API] Backend connection failed, using Pi direct:', err.message);
+        console.warn('[API] Backend connection failed:', err.message);
         backendConnected = false;
       });
 
@@ -34,26 +34,27 @@
       console.log('[API] Backend reconnected');
       backendConnected = true;
       updateBackendConnectionStatus(true);
+      clearRaspiOfflineState();
+      hideConnectionPopup();
     });
 
     backendApi.on('disconnected', () => {
       console.log('[API] Backend disconnected');
       backendConnected = false;
       updateBackendConnectionStatus(false);
+      showConnectionPopup('Backend disconnected', 'Check Ubuntu backend server or network.', true);
     });
 
     backendApi.on('command_response', (data) => {
       console.log('[API] Command response:', data.action, data.status);
+      clearRaspiOfflineState(data && data.device_id);
       if (!hasTrackingBridge) {
         handleCommandLifecycleEvent('command_response', data);
       }
     });
 
     backendApi.on('command_queued', (data) => {
-      console.log('[API] Command queued (device offline):', data.action);
-      if (!hasTrackingBridge) {
-        handleCommandLifecycleEvent('command_queued', data);
-      }
+      handleCommandLifecycleEvent('command_queued', data);
     });
 
     backendApi.on('command_accepted', (data) => {
@@ -122,89 +123,86 @@
     }
   }
 
-  // Unified API wrapper - tries backend first if enabled, falls back to Pi direct
+  function requireBackendApi() {
+    if (!backendApi) {
+      throw new Error('Backend API not available');
+    }
+    if (!backendConnected) {
+      throw new Error('Backend not connected');
+    }
+    return backendApi;
+  }
+
+  // Unified API wrapper.
   const api = {
-    // Use Pi direct API by default, but can switch to backend
-    detectBase: () => piApi ? piApi.detectBase() : Promise.reject(new Error('Pi API not available')),
+    detectBase: async () => {
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        const status = await wsApi.getStatus();
+        return String((status && status.serverUrl) || 'backend-ws');
+      }
+      return piApi ? piApi.detectBase() : Promise.reject(new Error('Pi API not available'));
+    },
 
     getStatus: async () => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.getDeviceInfo();
-        } catch (err) {
-          console.warn('[API] Backend getStatus failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.getDeviceInfo();
       }
       return piApi ? piApi.getStatus() : Promise.reject(new Error('No API available'));
     },
 
     getGpsLatest: async () => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.getGps();
-        } catch (err) {
-          console.warn('[API] Backend getGps failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.getGps();
       }
       return piApi ? piApi.getGpsLatest() : Promise.reject(new Error('No API available'));
     },
 
     getGpsTrack: async () => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.getGpsTrack();
-        } catch (err) {
-          console.warn('[API] Backend getGpsTrack failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.getGpsTrack();
       }
       return piApi ? piApi.getGpsTrack() : Promise.reject(new Error('No API available'));
     },
 
     getCameras: async () => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.getCameras();
-        } catch (err) {
-          console.warn('[API] Backend getCameras failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.getCameras();
       }
       return piApi ? piApi.getCameras() : Promise.reject(new Error('No API available'));
     },
 
     getCameraSnapshot: async (cameraIndex) => {
-      // Camera snapshots still use Pi direct for binary data
+      if (useBackend) {
+        throw new Error('Camera snapshot is not available in backend mode');
+      }
       return piApi ? piApi.getCameraSnapshot(cameraIndex) : Promise.reject(new Error('No API available'));
     },
 
     getContacts: async () => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.getContacts();
-        } catch (err) {
-          console.warn('[API] Backend getContacts failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.getContacts();
       }
       return piApi ? piApi.getContacts() : Promise.reject(new Error('No API available'));
     },
 
     getMessages: async () => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.getMessages();
-        } catch (err) {
-          console.warn('[API] Backend getMessages failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.getMessages();
       }
       return piApi ? piApi.getMessages() : Promise.reject(new Error('No API available'));
     },
 
     sendSms: async (numbers, message) => {
-      if (useBackend && backendConnected && backendApi) {
-        try {
-          return await backendApi.sendSms(numbers, message);
-        } catch (err) {
-          console.warn('[API] Backend sendSms failed:', err.message);
-        }
+      if (useBackend) {
+        const wsApi = requireBackendApi();
+        return wsApi.sendSms(numbers, message);
       }
       return piApi ? piApi.sendSms(numbers, message) : Promise.reject(new Error('No API available'));
     },
@@ -356,6 +354,7 @@
   const trackingPendingRequests = new Map();
   const recentTrackingEventKeys = new Map();
   const queuedLifecycleLoggedDevices = new Set();
+  const offlinePopupShownDevices = new Set();
   const deviceColors = new Map();
   const colorOrder = ['#1e88e5', '#2e7d32', '#f57c00', '#8e24aa', '#d81b60', '#00897b', '#5e35b1'];
   const OFFLINE_MARKER_COLOR = '#98a2b3';
@@ -371,6 +370,9 @@
   let presenceHistoryViewSource = 'raspi';
   let presenceHistoryLoaded = false;
   let presenceHistoryModalOpen = false;
+  let offlineCommandCooldownUntil = 0;
+  let connectionPopupEl = null;
+  let connectionPopupTimer = null;
   const presenceHistoryEntries = [];
   const presenceStateByKey = new Map();
   const presenceLastLocationLoggedAt = new Map();
@@ -466,6 +468,93 @@
     if (gpsStatusDotEl) gpsStatusDotEl.style.background = connected ? 'var(--success)' : 'var(--danger)';
     const floatGpsEl = document.getElementById('floatGpsStatus');
     if (floatGpsEl) floatGpsEl.textContent = connected ? 'On' : 'Disconnected';
+  }
+
+  function ensureConnectionPopupElement() {
+    if (connectionPopupEl && connectionPopupEl.isConnected) {
+      return connectionPopupEl;
+    }
+
+    const popup = document.createElement('div');
+    popup.id = 'connectionStatusPopup';
+    popup.setAttribute('role', 'status');
+    popup.setAttribute('aria-live', 'polite');
+    popup.style.cssText = [
+      'position:fixed',
+      'right:18px',
+      'bottom:18px',
+      'max-width:min(420px, calc(100vw - 36px))',
+      'padding:12px 14px',
+      'border-radius:12px',
+      'border:1px solid rgba(255,120,138,.45)',
+      'background:rgba(66,14,25,.96)',
+      'color:#ffe6ea',
+      'font-size:.76rem',
+      'line-height:1.35',
+      'box-shadow:0 10px 28px rgba(0,0,0,.38)',
+      'z-index:2500',
+      'display:none',
+      'opacity:0',
+      'pointer-events:none',
+      'transition:opacity .18s ease'
+    ].join(';');
+
+    document.body.appendChild(popup);
+    connectionPopupEl = popup;
+    return popup;
+  }
+
+  function hideConnectionPopup() {
+    const popup = ensureConnectionPopupElement();
+    popup.style.opacity = '0';
+    popup.style.display = 'none';
+  }
+
+  function showConnectionPopup(title, detail, isError = true) {
+    const popup = ensureConnectionPopupElement();
+    const normalizedTitle = String(title || '').trim() || 'Connection update';
+    const normalizedDetail = String(detail || '').trim();
+
+    popup.style.borderColor = isError ? 'rgba(255,120,138,.45)' : 'rgba(117,214,161,.45)';
+    popup.style.background = isError ? 'rgba(66,14,25,.96)' : 'rgba(9,56,32,.96)';
+    popup.style.color = isError ? '#ffe6ea' : '#e8fff1';
+    popup.innerHTML = `<div style="font-weight:700;font-size:.8rem;margin-bottom:3px;">${escapeHtml(normalizedTitle)}</div><div style="opacity:.94;">${escapeHtml(normalizedDetail || 'Status changed')}</div>`;
+    popup.style.display = 'block';
+    popup.style.opacity = '1';
+
+    if (connectionPopupTimer) {
+      clearTimeout(connectionPopupTimer);
+    }
+    connectionPopupTimer = setTimeout(() => {
+      hideConnectionPopup();
+    }, 5200);
+  }
+
+  function showRaspiOfflinePopup(deviceId, reason = '') {
+    const id = String(deviceId || '').trim() || 'raspi-device';
+    if (offlinePopupShownDevices.has(id)) {
+      return;
+    }
+    offlinePopupShownDevices.add(id);
+
+    const label = shortDeviceId(id) || id;
+    const detail = reason
+      ? `Commands are queued. ${reason}`
+      : 'Commands are queued until the device reconnects.';
+    showConnectionPopup(`${label} is offline`, detail, true);
+  }
+
+  function clearRaspiOfflineState(deviceId = '') {
+    const id = String(deviceId || '').trim();
+    if (id) {
+      offlinePopupShownDevices.delete(id);
+    } else {
+      offlinePopupShownDevices.clear();
+    }
+    offlineCommandCooldownUntil = 0;
+    if (!offlinePopupShownDevices.size) {
+      hideConnectionPopup();
+    }
   }
 
   function toNum(v) {
@@ -1745,10 +1834,13 @@
         return;
       }
       queuedLifecycleLoggedDevices.add(deviceId);
+      offlineCommandCooldownUntil = Number.POSITIVE_INFINITY;
+      showRaspiOfflinePopup(deviceId, 'The backend accepted the command but queued it because the device is offline.');
     }
 
     if (sourceType === 'command_response') {
       queuedLifecycleLoggedDevices.delete(deviceId);
+      clearRaspiOfflineState(deviceId);
     }
 
     const entry = {
@@ -1840,6 +1932,7 @@
       state.last_seen = new Date().toISOString();
       trackingPendingRequests.delete(deviceId);
       renderTrackingRequestBanners();
+      clearRaspiOfflineState(deviceId);
     }
 
     if (action === 'tracking_rejected') {
@@ -1853,6 +1946,7 @@
       applyDeviceLifecycle(action, deviceId, payload);
       if (action === 'device_online') {
         queuedLifecycleLoggedDevices.delete(deviceId);
+        clearRaspiOfflineState(deviceId);
       }
 
       const lifecycleLocation = getLocationFromEvent(event);
@@ -1885,6 +1979,7 @@
 
     if (action === 'location_update') {
       queuedLifecycleLoggedDevices.delete(deviceId);
+      clearRaspiOfflineState(deviceId);
       const location = getLocationFromEvent(event);
       if (location) {
         updateTrackingDeviceFromLocation(deviceId, location, payload);
@@ -3773,6 +3868,18 @@
 
   async function refreshFromPi() {
     try {
+      if (useBackend && backendConnected && offlineCommandCooldownUntil > Date.now()) {
+        const remainingMs = offlineCommandCooldownUntil - Date.now();
+        const reason = Number.isFinite(remainingMs)
+          ? `Device appears offline. Retrying commands in ${Math.max(1, Math.ceil(remainingMs / 1000))}s.`
+          : 'Device appears offline. Waiting for reconnect event.';
+        setConnectionState(false, 'RasPi: Offline', reason);
+        setGpsState(false, 'GPS: Disconnected');
+        setCameraConnectionState('Camera offline: RasPi is offline');
+        stopCameraMedia();
+        return;
+      }
+
       const base = await api.detectBase();
       if (base !== lastBase) {
         lastBase = base;
@@ -3799,8 +3906,17 @@
       renderMessages(lastMessagesData);
       updateSmsStats(lastMessagesData);
     } catch (err) {
-      const reason = err && err.message ? err.message : 'Cannot reach Pi backend';
-      setConnectionState(false, 'RasPi: Disconnected', reason);
+      const reason = err && err.message ? err.message : 'Cannot reach backend device';
+      const normalizedReason = String(reason).toLowerCase();
+      const isOfflineError = normalizedReason.includes('offline') || normalizedReason.includes('command queued');
+
+      if (isOfflineError) {
+        offlineCommandCooldownUntil = Number.POSITIVE_INFINITY;
+      } else if (normalizedReason.includes('backend')) {
+        showConnectionPopup('Backend disconnected', reason, true);
+      }
+
+      setConnectionState(false, isOfflineError ? 'RasPi: Offline' : 'RasPi: Disconnected', reason);
       setGpsState(false, 'GPS: Disconnected');
       recordPresenceStatusTransition('raspi', RASPI_HISTORY_DEVICE_ID, 'offline', null, null, Date.now(), reason);
       lastStatusData = null;

@@ -14,8 +14,8 @@ const BACKEND_WS_URL = process.env.BACKEND_WS_URL || 'ws://10.10.218.105:8000';
 // Admin bearer token - must match ADMIN_BEARER_TOKEN in server's .env
 const ADMIN_BEARER_TOKEN = process.env.ADMIN_BEARER_TOKEN || 'C9EQlRRiBTWUCltF6yGBKIT0NXuW3OgZ';
 
-// Target device ID - the mobile device to send commands to
-const TARGET_DEVICE_ID = process.env.TARGET_DEVICE_ID || 'test-mobile-001';
+// Target device ID - the device to send commands to
+const TARGET_DEVICE_ID = process.env.TARGET_DEVICE_ID || 'raspi-device-001';
 
 module.exports = {
   // HTTP endpoints

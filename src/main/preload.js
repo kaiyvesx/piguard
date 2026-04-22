@@ -5,11 +5,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Kept for backward compatibility with existing code
 // =====================================================
 
+const DEFAULT_BACKEND_HTTP_URL = process.env.BACKEND_HTTP_URL || 'http://10.10.218.105:8000';
+
 const BASE_CANDIDATES = [
-  'http://raspi44:8000',
-  'http://raspi44.local:8000',
-  'http://10.10.218.109:8000',
-];
+  DEFAULT_BACKEND_HTTP_URL,
+  'http://localhost:8000',
+]
+  .map((url) => String(url || '').trim().replace(/\/+$/, ''))
+  .filter(Boolean)
+  .filter((url, index, list) => list.indexOf(url) === index);
 
 let cachedBase = null;
 
@@ -72,7 +76,7 @@ async function fetchBinaryDataUrl(url, timeoutMs = 15000) {
 async function detectBase() {
   if (cachedBase) {
     try {
-      await fetchJson(`${cachedBase}/status`, { method: 'GET' }, 3000);
+      await fetchJson(`${cachedBase}/health`, { method: 'GET' }, 3000);
       return cachedBase;
     } catch {
       cachedBase = null;
@@ -81,7 +85,7 @@ async function detectBase() {
 
   for (const base of BASE_CANDIDATES) {
     try {
-      await fetchJson(`${base}/status`, { method: 'GET' }, 3000);
+      await fetchJson(`${base}/health`, { method: 'GET' }, 3000);
       cachedBase = base;
       return base;
     } catch {
@@ -89,7 +93,7 @@ async function detectBase() {
     }
   }
 
-  throw new Error(`Pi backend unreachable. Tried: ${BASE_CANDIDATES.join(', ')}`);
+  throw new Error(`Backend server unreachable. Tried: ${BASE_CANDIDATES.join(', ')}`);
 }
 
 async function request(path, method = 'GET', body = undefined, timeoutMs = 10000) {

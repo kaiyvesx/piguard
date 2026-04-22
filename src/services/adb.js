@@ -5,7 +5,6 @@ const { promisify } = require('util');
 const config = require('./backend.config');
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_PLACEHOLDER_DEVICE_ID = 'test-mobile-001';
 
 async function runAdb(args) {
   const adbBin = process.env.ADB_BIN || 'adb';
@@ -72,7 +71,7 @@ async function getPreferredDeviceId() {
 
 function shouldAutoDetectTarget() {
   const target = String(config.targetDeviceId || '').trim();
-  return !target || target === DEFAULT_PLACEHOLDER_DEVICE_ID;
+  return !target;
 }
 
 module.exports = {

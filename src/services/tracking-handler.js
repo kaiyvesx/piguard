@@ -293,6 +293,8 @@ function _onGpsCommandResponse(msg, client) {
 }
 
 function handle(msg, client) {
+  console.log('[TrackingHandler] Handling:', msg?.action, 'from:', msg?.device_id || 'none');
+
   const type = String(msg?.type || '').trim().toLowerCase();
   if (type === 'command_response') {
     _onGpsCommandResponse(msg, client);
@@ -319,7 +321,7 @@ function handle(msg, client) {
 
 function handleCommandResponse(msg, client) {
   recordCommandResponse(msg);
-  _onGpsCommandResponse(msg, client);
+  handle(msg, client);
 }
 
 function getDeviceList() {
