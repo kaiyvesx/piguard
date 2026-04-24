@@ -3,6 +3,7 @@
 const { BrowserWindow, ipcMain } = require('electron');
 const trackingHandler = require('../services/tracking-handler');
 const deviceStore = require('../services/device-store');
+const logPoller = require('../services/log-poller');
 const {
   loadAllDevices,
   loadGpsHistory,
@@ -96,6 +97,37 @@ function normalizeSupabaseDevice(device, forceOffline = false) {
   };
 }
 
+function normalizePolledDevice(device) {
+  if (!device || typeof device !== 'object') return null;
+
+  const deviceId = String(device.deviceId || device.device_id || '').trim();
+  if (!deviceId) return null;
+
+  const latitude = toFiniteNumber(device.lat ?? device.latitude ?? device.last_lat);
+  const longitude = toFiniteNumber(device.lng ?? device.longitude ?? device.last_lng);
+  const lastSeen = device.lastSeen || device.last_seen || null;
+  const connectedAt = device.firstSeen || device.connected_at || null;
+  const rawStatus = String(device.status || 'offline').trim().toLowerCase();
+
+  return {
+    ...device,
+    device_id: deviceId,
+    status: rawStatus === 'online' || rawStatus === 'active' ? 'online' : rawStatus,
+    connected_at: connectedAt,
+    last_seen: lastSeen,
+    user_id: device.userId || device.user_id || null,
+    last_location: latitude != null && longitude != null
+      ? {
+          lat: latitude,
+          lng: longitude,
+          latitude,
+          longitude,
+          timestamp: lastSeen,
+        }
+      : null,
+  };
+}
+
 function registerTrackingIPC(adminClient) {
   if (isRegistered) return;
   if (!adminClient) {
@@ -118,6 +150,10 @@ function registerTrackingIPC(adminClient) {
         .filter(Boolean);
 
       const active = trackingHandler.getDeviceList();
+      const cached = logPoller
+        .getCachedDevices()
+        .map((item) => normalizePolledDevice(item))
+        .filter(Boolean);
 
       const merged = new Map();
 
@@ -130,6 +166,19 @@ function registerTrackingIPC(adminClient) {
       }
 
       for (const device of active) {
+        const deviceId = String(device?.device_id || '').trim();
+        if (!deviceId) continue;
+
+        const previous = merged.get(deviceId) || {};
+        merged.set(deviceId, {
+          ...previous,
+          ...device,
+          device_id: deviceId,
+          last_location: device.last_location || previous.last_location || null,
+        });
+      }
+
+      for (const device of cached) {
         const deviceId = String(device?.device_id || '').trim();
         if (!deviceId) continue;
 
@@ -159,6 +208,10 @@ function registerTrackingIPC(adminClient) {
     } catch (err) {
       return { success: false, error: buildSafeError(err, 'Failed to fetch device list') };
     }
+  });
+
+  ipcMain.handle('get-cached-devices', () => {
+    return logPoller.getCachedDevices();
   });
 
   ipcMain.handle('supabase:get-devices', async (event) => {

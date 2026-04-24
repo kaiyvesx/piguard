@@ -7,6 +7,7 @@ const path = require('path');
 const { setupEventForwarding } = require('./ipc-handlers');
 const { adminClient } = require('./admin-ws-client');
 const deviceStore = require('../services/device-store');
+const logPoller = require('../services/log-poller');
 
 let registerTrackingIPC = null;
 try {
@@ -88,6 +89,11 @@ function createWindow() {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
+adminClient.on('connected', () => {
+  console.log('[Main] Admin WS ready, starting log poller');
+  logPoller.startPolling(5000);
+});
+
 app.whenReady().then(() => {
   deviceStore.markAllOfflineOnStartup();
   const saved = deviceStore.getAllDevices();
@@ -96,9 +102,17 @@ app.whenReady().then(() => {
   createWindow();
   registerTrackingIPC(adminClient);
 
+  setTimeout(() => {
+    logPoller.startPolling(5000);
+  }, 3000);
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  logPoller.stopPolling();
 });
 
 app.on('window-all-closed', () => {

@@ -74,40 +74,7 @@
     });
 
     if (hasTrackingBridge) {
-      window.trackingBridge.onDeviceOnline((data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
-      window.trackingBridge.onDeviceOffline((data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
-      window.trackingBridge.onLocation((data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
-      window.trackingBridge.onDevicesUpdate((data) => applyTrackingDevicesUpdate(data));
-      window.trackingBridge.onMessageLog((data) => applyTrackingMessageLog(data));
-
-      window.trackingBridge.on('tracking:request', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_request' }));
-      window.trackingBridge.on('tracking:session_end', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_session_end' }));
-      window.trackingBridge.on('tracking:approved', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_approved' }));
-      window.trackingBridge.on('tracking:rejected', (data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_rejected' }));
-
-      window.trackingBridge.getDeviceList()
-        .then((snapshot) => {
-          applyTrackingDevicesUpdate(snapshot);
-        })
-        .catch((err) => {
-          console.warn('[Tracking] Failed to load initial device list:', err.message);
-        });
-    } else if (window.electronAPI && typeof window.electronAPI.on === 'function') {
-      window.electronAPI.on('mobile:device_online', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
-      window.electronAPI.on('mobile:device_offline', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
-      window.electronAPI.on('mobile:location', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
-
-      window.electronAPI.on('tracking:device_online', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_online' }));
-      window.electronAPI.on('tracking:device_offline', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'device_offline' }));
-      window.electronAPI.on('tracking:location', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'location_update' }));
-      window.electronAPI.on('tracking:devices_update', (_evt, data) => applyTrackingDevicesUpdate(data));
-      window.electronAPI.on('tracking:message_log', (_evt, data) => applyTrackingMessageLog(data));
-
-      // Legacy fallback channels.
-      window.electronAPI.on('tracking:request', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_request' }));
-      window.electronAPI.on('tracking:session_end', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_session_end' }));
-      window.electronAPI.on('tracking:approved', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_approved' }));
-      window.electronAPI.on('tracking:rejected', (_evt, data) => handleBackendDeviceEvent({ type: 'device_event', ...data, action: 'tracking_rejected' }));
+      console.log('[API] Mobile tracking listeners are handled inline in panel/sidebar templates');
     }
   }
 

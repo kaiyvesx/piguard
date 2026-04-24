@@ -64,25 +64,59 @@ function isMissingSchemaError(error) {
   return message.includes('does not exist') || message.includes('undefined column');
 }
 
+function isMissingColumnError(error, columnName) {
+  if (!error) return false;
+  const message = String(error.message || '').toLowerCase();
+  return message.includes(String(columnName || '').toLowerCase()) && isMissingSchemaError(error);
+}
+
 async function upsertDevice(deviceId, status, lat, lng) {
   const client = getClient();
   const id = cleanText(deviceId);
   if (!client || !id) return null;
 
+  const now = Date.now();
+
   const payload = {
     device_id: id,
-    status: cleanText(status) || 'offline',
+    status: cleanText(status) || 'online',
     last_seen: new Date().toISOString(),
     last_lat: cleanNumber(lat),
     last_lng: cleanNumber(lng),
+    created_at_ms: now,
+    updated_at_ms: now,
   };
 
-  const { error } = await client
+  let { error } = await client
     .from('devices')
-    .upsert(payload, { onConflict: 'device_id' });
+    .upsert(payload, {
+      onConflict: 'device_id',
+      ignoreDuplicates: false,
+    });
 
-  if (error) throw error;
-  return null;
+  // updated_at_ms is optional in some schemas; retry safely when absent.
+  if (error && isMissingColumnError(error, 'updated_at_ms')) {
+    const retryPayload = {
+      ...payload,
+    };
+    delete retryPayload.updated_at_ms;
+
+    const retryResult = await client
+      .from('devices')
+      .upsert(retryPayload, {
+        onConflict: 'device_id',
+        ignoreDuplicates: false,
+      });
+
+    error = retryResult.error;
+  }
+
+  if (error) {
+    console.error('[Supabase] upsertDevice error:', error.message || error);
+    return null;
+  }
+
+  return true;
 }
 
 async function saveGpsLog(deviceId, latitude, longitude, requestId) {

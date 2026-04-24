@@ -259,6 +259,7 @@ const TRACKING_RECEIVE_CHANNELS = new Set([
   'mobile:device_offline',
   'mobile:location',
   'mobile:gps_response',
+  'mobile:devices_list',
   // Legacy compatibility channels.
   'tracking:device_online',
   'tracking:device_offline',
@@ -269,6 +270,17 @@ const TRACKING_RECEIVE_CHANNELS = new Set([
   'tracking:session_end',
   'tracking:approved',
   'tracking:rejected',
+]);
+
+const TRACKING_INVOKE_CHANNELS = new Set([
+  'get-cached-devices',
+  'get-device-list',
+  'send-command',
+  'send-gps-command',
+  'supabase:get-devices',
+  'supabase:get-gps-history',
+  'supabase:save-presence-history',
+  'supabase:get-presence-history',
 ]);
 
 const trackingEventListeners = new Map();
@@ -310,6 +322,13 @@ function removeTrackingListener(channel, callback) {
   }
 }
 
+function invokeTrackingChannel(channel, ...args) {
+  if (!TRACKING_INVOKE_CHANNELS.has(channel)) {
+    throw new Error(`Unsupported invoke channel: ${channel}`);
+  }
+  return ipcRenderer.invoke(channel, ...args);
+}
+
 contextBridge.exposeInMainWorld('trackingBridge', {
   on: (channel, callback) => addTrackingListener(channel, callback),
   off: (channel, callback) => removeTrackingListener(channel, callback),
@@ -318,28 +337,32 @@ contextBridge.exposeInMainWorld('trackingBridge', {
   onDeviceOffline: (callback) => addTrackingListener('mobile:device_offline', callback),
   onLocation: (callback) => addTrackingListener('mobile:location', callback),
   onGpsResponse: (callback) => addTrackingListener('mobile:gps_response', callback),
+  onDevicesList: (callback) => addTrackingListener('mobile:devices_list', callback),
   onDevicesUpdate: (callback) => addTrackingListener('tracking:devices_update', callback),
   onMessageLog: (callback) => addTrackingListener('tracking:message_log', callback),
 
   sendCommand: (deviceId, action, payload = {}) =>
-    unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
-  getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
-  getSupabaseDevices: () => unwrapResponse(ipcRenderer.invoke('supabase:get-devices')),
+    unwrapResponse(invokeTrackingChannel('send-command', deviceId, action, payload)),
+  getCachedDevices: () => unwrapResponse(invokeTrackingChannel('get-cached-devices')),
+  getDeviceList: () => unwrapResponse(invokeTrackingChannel('get-device-list')),
+  getSupabaseDevices: () => unwrapResponse(invokeTrackingChannel('supabase:get-devices')),
   getSupabaseGpsHistory: (deviceId, limit = 50) =>
-    unwrapResponse(ipcRenderer.invoke('supabase:get-gps-history', deviceId, limit)),
+    unwrapResponse(invokeTrackingChannel('supabase:get-gps-history', deviceId, limit)),
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  on: (channel, cb) => ipcRenderer.on(channel, cb),
+  on: (channel, callback) => ipcRenderer.on(channel, callback),
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
   onMobileDeviceOnline: (callback) => addTrackingListener('mobile:device_online', callback),
   onMobileDeviceOffline: (callback) => addTrackingListener('mobile:device_offline', callback),
   onMobileLocation: (callback) => addTrackingListener('mobile:location', callback),
   onMobileGpsResponse: (callback) => addTrackingListener('mobile:gps_response', callback),
-  getDeviceList: () => unwrapResponse(ipcRenderer.invoke('get-device-list')),
-  getSupabaseDevices: () => unwrapResponse(ipcRenderer.invoke('supabase:get-devices')),
+  onMobileDevicesList: (callback) => addTrackingListener('mobile:devices_list', callback),
+  getCachedDevices: () => unwrapResponse(invokeTrackingChannel('get-cached-devices')),
+  getDeviceList: () => unwrapResponse(invokeTrackingChannel('get-device-list')),
+  getSupabaseDevices: () => unwrapResponse(invokeTrackingChannel('supabase:get-devices')),
   getSupabaseGpsHistory: (deviceId, limit = 50) =>
-    unwrapResponse(ipcRenderer.invoke('supabase:get-gps-history', deviceId, limit)),
+    unwrapResponse(invokeTrackingChannel('supabase:get-gps-history', deviceId, limit)),
   sendCommand: (deviceId, action, payload = {}) =>
-    unwrapResponse(ipcRenderer.invoke('send-command', deviceId, action, payload)),
+    unwrapResponse(invokeTrackingChannel('send-command', deviceId, action, payload)),
 });
