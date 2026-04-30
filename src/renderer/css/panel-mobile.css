@@ -140,21 +140,23 @@
   border: 1px solid rgba(74, 113, 157, 0.54);
   border-left-width: 3px;
   border-radius: 12px;
-  background: linear-gradient(180deg, rgba(12, 29, 51, 0.9), rgba(9, 19, 34, 0.94));
+  background:
+    radial-gradient(120% 100% at 0% 0%, rgba(81, 153, 246, 0.2), transparent 55%),
+    linear-gradient(180deg, rgba(14, 34, 60, 0.95), rgba(8, 18, 34, 0.98));
   padding: 10px;
   cursor: pointer;
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 #panel-mobile .tracking-device-card:hover {
-  border-color: rgba(143, 193, 255, 0.8);
-  box-shadow: 0 7px 14px rgba(0, 0, 0, 0.22);
+  border-color: rgba(143, 193, 255, 0.92);
+  box-shadow: 0 10px 18px rgba(7, 20, 36, 0.55), 0 0 0 1px rgba(99, 172, 255, 0.28);
   transform: translateY(-1px);
 }
 
 #panel-mobile .tracking-device-card.is-selected {
   border-color: #70c8ff;
-  box-shadow: 0 0 0 2px rgba(112, 200, 255, 0.22);
+  box-shadow: 0 0 0 2px rgba(112, 200, 255, 0.32), 0 12px 22px rgba(5, 14, 29, 0.5);
 }
 
 #panel-mobile .tracking-device-card.is-online {
@@ -206,7 +208,7 @@
 
 #panel-mobile .tracking-device-meta {
   font-size: 0.7rem;
-  color: #9cb4d0;
+  color: #bad1eb;
   line-height: 1.4;
   margin-bottom: 8px;
 }
@@ -219,24 +221,57 @@
 
 #panel-mobile .tracking-action-btn {
   display: none;
-}
-
-#panel-mobile .tracking-action-btn[data-action="get_gps"] {
-  display: block;
-  border: 1px solid rgba(119, 170, 227, 0.45);
-  background: rgba(19, 53, 92, 0.78);
-  color: #d9ecff;
   border-radius: 8px;
   height: 30px;
   font-size: 0.69rem;
   font-weight: 700;
   letter-spacing: 0.03em;
   cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s ease;
 }
 
-#panel-mobile .tracking-action-btn[data-action="get_gps"]:hover:not(:disabled) {
+#panel-mobile .tracking-action-btn[data-action="get_gps"],
+#panel-mobile .tracking-action-btn[data-action="toggle_actions"] {
+  display: block;
+  border: 1px solid rgba(119, 170, 227, 0.55);
+  background: linear-gradient(180deg, rgba(24, 69, 119, 0.95), rgba(18, 50, 88, 0.9));
+  color: #e8f4ff;
+}
+
+#panel-mobile .tracking-action-btn[data-action="get_gps"]:hover:not(:disabled),
+#panel-mobile .tracking-action-btn[data-action="toggle_actions"]:hover:not(:disabled) {
   border-color: rgba(172, 212, 255, 0.85);
-  background: rgba(29, 74, 124, 0.88);
+  background: linear-gradient(180deg, rgba(37, 89, 147, 0.96), rgba(24, 66, 112, 0.92));
+  transform: translateY(-1px);
+}
+
+#panel-mobile .tracking-action-btn[data-action="show_camera"],
+#panel-mobile .tracking-action-btn[data-action="show_sms"],
+#panel-mobile .tracking-action-btn[data-action="show_logs"] {
+  display: block;
+  border: 1px solid rgba(110, 154, 204, 0.46);
+  background: linear-gradient(180deg, rgba(17, 45, 76, 0.92), rgba(13, 33, 58, 0.92));
+  color: #d9ecff;
+}
+
+#panel-mobile .tracking-action-btn[data-action="show_camera"]:hover:not(:disabled),
+#panel-mobile .tracking-action-btn[data-action="show_sms"]:hover:not(:disabled),
+#panel-mobile .tracking-action-btn[data-action="show_logs"]:hover:not(:disabled) {
+  border-color: rgba(165, 208, 255, 0.86);
+  background: linear-gradient(180deg, rgba(29, 72, 120, 0.95), rgba(18, 47, 82, 0.95));
+  transform: translateY(-1px);
+}
+
+#panel-mobile .tracking-action-btn[data-action="show_camera"] {
+  box-shadow: inset 0 0 0 1px rgba(84, 203, 255, 0.25);
+}
+
+#panel-mobile .tracking-action-btn[data-action="show_sms"] {
+  box-shadow: inset 0 0 0 1px rgba(138, 231, 176, 0.25);
+}
+
+#panel-mobile .tracking-action-btn[data-action="show_logs"] {
+  box-shadow: inset 0 0 0 1px rgba(203, 155, 255, 0.24);
 }
 
 #panel-mobile .tracking-action-btn[data-action="get_gps"]:disabled {

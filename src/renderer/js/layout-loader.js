@@ -51,6 +51,9 @@
     ].join("\n");
 
     await loadScript("js/index.js");
+    await loadScript("js/mobile-shared.js");
+    await loadScript("js/panel-mobile.js");
+    await loadScript("js/sidebar-mobile.js");
     await loadScript("js/api.js");
   }
 
