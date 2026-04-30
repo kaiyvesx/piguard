@@ -284,6 +284,10 @@ function setupEventForwarding(mainWindow) {
     safeSend('tracking:rejected', data);
   };
 
+  const onMessageLog = (data) => {
+    safeSend('backend:event', { type: 'tracking:message_log', ...data });
+  };
+
   const onError = (err) => {
     safeSend('backend:event', { type: 'error', message: err.message });
   };
@@ -300,6 +304,7 @@ function setupEventForwarding(mainWindow) {
     ['tracking:session_end', onTrackingSessionEnd],
     ['tracking:approved', onTrackingApproved],
     ['tracking:rejected', onTrackingRejected],
+    ['message_log', onMessageLog],
     ['error', onError],
   ];
 

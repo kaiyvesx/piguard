@@ -50,6 +50,8 @@ class AdminWebSocketClient extends EventEmitter {
     this._maxReconnectAttempts = 5;
     this._baseReconnectDelay = config.reconnectDelay;
     this._offlineLoggedDevices = new Set();
+    this._lastServerErrorKey = null;
+    this._lastServerErrorAt = 0;
   }
 
   /**
@@ -207,7 +209,14 @@ class AdminWebSocketClient extends EventEmitter {
 
     // Handle error messages
     if (type === 'error') {
-      console.error('[AdminWS] Server error:', msg.message);
+      const message = String(msg.message || 'Unknown server error').trim() || 'Unknown server error';
+      const errorKey = `${type}:${message}`;
+      const now = Date.now();
+      if (this._lastServerErrorKey !== errorKey || now - this._lastServerErrorAt > 30000) {
+        this._lastServerErrorKey = errorKey;
+        this._lastServerErrorAt = now;
+        console.error('[AdminWS] Server error:', message);
+      }
       this.emit('error', new Error(msg.message));
       return;
     }

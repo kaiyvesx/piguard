@@ -91,7 +91,7 @@ function createWindow() {
 
 adminClient.on('connected', () => {
   console.log('[Main] Admin WS ready, starting log poller');
-  logPoller.startPolling(5000);
+  logPoller.startPolling(15000);
 });
 
 app.whenReady().then(() => {
@@ -103,7 +103,7 @@ app.whenReady().then(() => {
   registerTrackingIPC(adminClient);
 
   setTimeout(() => {
-    logPoller.startPolling(5000);
+    logPoller.startPolling(15000);
   }, 3000);
 
   app.on('activate', () => {

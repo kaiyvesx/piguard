@@ -33,6 +33,7 @@
     backendApi.on('connected', () => {
       console.log('[API] Backend reconnected');
       backendConnected = true;
+      useBackend = true;
       updateBackendConnectionStatus(true);
       clearRaspiOfflineState();
       hideConnectionPopup();
@@ -41,8 +42,9 @@
     backendApi.on('disconnected', () => {
       console.log('[API] Backend disconnected');
       backendConnected = false;
+      useBackend = false;
       updateBackendConnectionStatus(false);
-      showConnectionPopup('Backend disconnected', 'Check Ubuntu backend server or network.', true);
+      showConnectionPopup('Backend disconnected', 'Using Pi Direct bridge until the backend reconnects.', false);
     });
 
     backendApi.on('command_response', (data) => {
@@ -73,6 +75,10 @@
       handleBackendDeviceEvent(data);
     });
 
+    backendApi.on('tracking:message_log', (data) => {
+      applyTrackingMessageLog(data);
+    });
+
     if (hasTrackingBridge) {
       console.log('[API] Mobile tracking listeners are handled inline in panel/sidebar templates');
     }
@@ -100,47 +106,41 @@
     return backendApi;
   }
 
+  function getReadApi() {
+    if (backendApi && backendConnected) {
+      return backendApi;
+    }
+    if (piApi) {
+      return piApi;
+    }
+    throw new Error('No API available');
+  }
+
   // Unified API wrapper.
   const api = {
     detectBase: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        const status = await wsApi.getStatus();
-        return String((status && status.serverUrl) || 'backend-ws');
-      }
+      // Raspi (109) detection is independent; use Pi bridge directly
       return piApi ? piApi.detectBase() : Promise.reject(new Error('Pi API not available'));
     },
 
     getStatus: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.getDeviceInfo();
-      }
-      return piApi ? piApi.getStatus() : Promise.reject(new Error('No API available'));
+      // Raspi status (109) is independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.getStatus() : Promise.reject(new Error('Pi API not available'));
     },
 
     getGpsLatest: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.getGps();
-      }
-      return piApi ? piApi.getGpsLatest() : Promise.reject(new Error('No API available'));
+      // Raspi GPS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.getGpsLatest() : Promise.reject(new Error('Pi API not available'));
     },
 
     getGpsTrack: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.getGpsTrack();
-      }
-      return piApi ? piApi.getGpsTrack() : Promise.reject(new Error('No API available'));
+      // Raspi GPS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.getGpsTrack() : Promise.reject(new Error('Pi API not available'));
     },
 
     getCameras: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.getCameras();
-      }
-      return piApi ? piApi.getCameras() : Promise.reject(new Error('No API available'));
+      // Raspi cameras (109) are independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.getCameras() : Promise.reject(new Error('Pi API not available'));
     },
 
     getCameraSnapshot: async (cameraIndex) => {
@@ -151,27 +151,18 @@
     },
 
     getContacts: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.getContacts();
-      }
-      return piApi ? piApi.getContacts() : Promise.reject(new Error('No API available'));
+      // Raspi contacts (109) are independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.getContacts() : Promise.reject(new Error('Pi API not available'));
     },
 
     getMessages: async () => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.getMessages();
-      }
-      return piApi ? piApi.getMessages() : Promise.reject(new Error('No API available'));
+      // Raspi messages/SMS (109) are independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.getMessages() : Promise.reject(new Error('Pi API not available'));
     },
 
     sendSms: async (numbers, message) => {
-      if (useBackend) {
-        const wsApi = requireBackendApi();
-        return wsApi.sendSms(numbers, message);
-      }
-      return piApi ? piApi.sendSms(numbers, message) : Promise.reject(new Error('No API available'));
+      // Raspi SMS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      return piApi ? piApi.sendSms(numbers, message) : Promise.reject(new Error('Pi API not available'));
     },
 
     // New backend-only methods
@@ -1777,7 +1768,7 @@
       return;
     }
 
-    if (action === 'device_offline' || action === 'tracking_session_end' || action === 'tracking_rejected') {
+    if (action === 'device_offline' || action === 'tracking_rejected') {
       const disconnectedAt = normalizeIsoTime(payload.disconnected_at || payload.denied_at, new Date().toISOString());
       state.status = 'offline';
       state.disconnected_at = disconnectedAt;
@@ -1909,7 +1900,7 @@
       recordPresenceStatusTransition('mobile', deviceId, 'offline', null, null, Date.now(), 'tracking_rejected');
     }
 
-    if (action === 'device_online' || action === 'device_offline' || action === 'tracking_session_end') {
+    if (action === 'device_online' || action === 'device_offline') {
       applyDeviceLifecycle(action, deviceId, payload);
       if (action === 'device_online') {
         queuedLifecycleLoggedDevices.delete(deviceId);
@@ -3854,7 +3845,7 @@
       }
       setConnectionState(true, 'RasPi: Connected', base);
 
-      const [gps, track, contactData, messagesData, statusData] = await Promise.all([
+      const [gpsResult, trackResult, contactsResult, messagesResult, statusResult] = await Promise.allSettled([
         api.getGpsLatest(),
         api.getGpsTrack(),
         api.getContacts(),
@@ -3862,16 +3853,26 @@
         api.getStatus(),
       ]);
 
-      lastStatusData = statusData && typeof statusData === 'object' ? statusData : null;
+      const gps = gpsResult.status === 'fulfilled' ? gpsResult.value : null;
+      const track = trackResult.status === 'fulfilled' ? trackResult.value : null;
+      const contactData = contactsResult.status === 'fulfilled' ? contactsResult.value : null;
+      const messagesData = messagesResult.status === 'fulfilled' ? messagesResult.value : null;
+      const statusData = statusResult.status === 'fulfilled' ? statusResult.value : null;
+
+      lastStatusData = statusData && typeof statusData === 'object' ? statusData : lastStatusData;
       updateGpsFromBackend(gps, track);
 
-      const backendContacts = Array.isArray(contactData && contactData.contacts) ? contactData.contacts : [];
-      lastMessagesData = messagesData && typeof messagesData === 'object' ? messagesData : { sms: [] };
-      contacts = combineContacts(backendContacts);
-      pruneDeliveredLocalMessages(lastMessagesData.sms);
-      renderContacts();
-      renderMessages(lastMessagesData);
-      updateSmsStats(lastMessagesData);
+      if (Array.isArray(contactData && contactData.contacts)) {
+        contacts = combineContacts(contactData.contacts);
+        renderContacts();
+      }
+
+      if (messagesData && typeof messagesData === 'object') {
+        lastMessagesData = messagesData;
+        pruneDeliveredLocalMessages(lastMessagesData.sms);
+        renderMessages(lastMessagesData);
+        updateSmsStats(lastMessagesData);
+      }
     } catch (err) {
       const reason = err && err.message ? err.message : 'Cannot reach backend device';
       const normalizedReason = String(reason).toLowerCase();

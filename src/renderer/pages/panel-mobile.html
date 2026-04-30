@@ -35,15 +35,15 @@
 
       <section
         id="trackingGpsEventLog"
-        style="position:absolute;left:12px;right:12px;bottom:12px;z-index:4;border:1px solid rgba(95,150,219,.5);border-radius:12px;background:rgba(6,16,31,.9);box-shadow:0 10px 22px rgba(0,0,0,.35);"
+        style="position:absolute;right:12px;left:auto;bottom:12px;z-index:4;width:min(360px,calc(100% - 24px));border:1px solid rgba(95,150,219,.45);border-radius:10px;background:rgba(6,16,31,.9);box-shadow:0 8px 18px rgba(0,0,0,.3);"
       >
-        <header style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid rgba(95,150,219,.34);">
-          <div style="color:#deeeff;font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">GPS Event Log</div>
-          <div id="trackingGpsEventCount" style="color:#9fb9d6;font-size:.67rem;">0 events</div>
+        <header style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;border-bottom:1px solid rgba(95,150,219,.28);">
+          <div style="color:#deeeff;font-size:.64rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">GPS Event Log</div>
+          <div id="trackingGpsEventCount" style="color:#9fb9d6;font-size:.62rem;">0 events</div>
         </header>
         <div
           id="trackingGpsEventList"
-          style="max-height:160px;overflow-y:auto;padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;font-size:.7rem;"
+          style="max-height:96px;overflow-y:auto;padding:6px 10px 8px;display:flex;flex-direction:column;gap:4px;font-size:.64rem;"
         >
           <div class="tracking-log-empty">No GPS events yet.</div>
         </div>
@@ -284,7 +284,10 @@
         rows.forEach(function(item){
           var id=getDeviceId(item);
           if(!id){return;}
-          var merged=mergeDevice(id,{userId:item.userId||item.user_id||null,status:item.status||"known",lat:item.lat!=null?item.lat:item.latitude,lng:item.lng!=null?item.lng:item.longitude,lastSeen:item.lastSeen||item.last_seen||Date.now()});
+          var lastLocation=item.last_location||item.lastLocation||null;
+          var lat=item.lat!=null?item.lat:(item.latitude!=null?item.latitude:(item.last_lat!=null?item.last_lat:(lastLocation?lastLocation.lat||lastLocation.latitude:null)));
+          var lng=item.lng!=null?item.lng:(item.longitude!=null?item.longitude:(item.last_lng!=null?item.last_lng:(lastLocation?lastLocation.lng||lastLocation.longitude:null)));
+          var merged=mergeDevice(id,{userId:item.userId||item.user_id||null,status:item.status||"known",lat:lat,lng:lng,lastSeen:item.lastSeen||item.last_seen||Date.now()});
           updateMapForDevice(merged);
         });
         renderCards();
@@ -309,6 +312,16 @@
           handleDevicesList({devices:rows});
         }).catch(function(err){
           console.warn("[Panel] Failed to load cached devices:",err&&err.message?err.message:err);
+        });
+      }
+
+      function loadSupabaseDevices(){
+        if(!window.electronAPI||typeof window.electronAPI.getSupabaseDevices!=="function"){return;}
+        window.electronAPI.getSupabaseDevices().then(function(result){
+          var rows=Array.isArray(result)?result:(result&&Array.isArray(result.data)?result.data:[]);
+          handleDevicesList({devices:rows});
+        }).catch(function(err){
+          console.warn("[Panel] Failed to load Supabase devices:",err&&err.message?err.message:err);
         });
       }
 
@@ -339,6 +352,7 @@
       registerListeners();
       bindCardActions();
       loadCachedDevices();
+      loadSupabaseDevices();
       renderCards();
       renderGpsLog();
 

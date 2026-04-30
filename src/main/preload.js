@@ -5,10 +5,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Kept for backward compatibility with existing code
 // =====================================================
 
-const DEFAULT_BACKEND_HTTP_URL = process.env.BACKEND_HTTP_URL || 'http://10.10.218.105:8000';
+const DEFAULT_RASPI_HTTP_URL = process.env.RASPI_HTTP_URL || 'http://10.10.218.109:8000';
 
 const BASE_CANDIDATES = [
-  DEFAULT_BACKEND_HTTP_URL,
+  DEFAULT_RASPI_HTTP_URL,
   'http://localhost:8000',
 ]
   .map((url) => String(url || '').trim().replace(/\/+$/, ''))
@@ -93,7 +93,7 @@ async function detectBase() {
     }
   }
 
-  throw new Error(`Backend server unreachable. Tried: ${BASE_CANDIDATES.join(', ')}`);
+  throw new Error(`Raspberry Pi bridge unreachable. Tried: ${BASE_CANDIDATES.join(', ')}`);
 }
 
 async function request(path, method = 'GET', body = undefined, timeoutMs = 10000) {

@@ -39,11 +39,20 @@ adminClient._handleMessage = function patchedHandleMessage(msg, connectResolve, 
         offlineQueuedDevices.delete(deviceId);
       }
     }
+  }
 
-    // Transport accepted acknowledgements are noisy during offline periods.
-    if (type !== 'accepted' && type !== 'pong') {
-      console.log('[AdminWS] Message type:', type || 'unknown', 'device:', deviceId || 'none');
-    }
+  if (type === 'error') {
+    this.emit('message_log', {
+      timestamp: new Date().toISOString(),
+      device_id: deviceId || '-',
+      action: 'server_error',
+      level: 'error',
+      status: 'error',
+      payload: {
+        message: String(msg?.message || 'Unknown server error').trim() || 'Unknown server error',
+        raw_type: type,
+      },
+    });
   }
 
   if (type === 'device_event') {

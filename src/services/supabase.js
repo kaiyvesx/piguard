@@ -60,7 +60,7 @@ function cleanObject(value) {
 function isMissingSchemaError(error) {
   const code = String(error?.code || '').trim();
   const message = String(error?.message || '').toLowerCase();
-  if (code === '42P01' || code === '42703') return true;
+  if (code === '42P01' || code === '42703' || code === 'PGRST204') return true;
   return message.includes('does not exist') || message.includes('undefined column');
 }
 
@@ -68,6 +68,30 @@ function isMissingColumnError(error, columnName) {
   if (!error) return false;
   const message = String(error.message || '').toLowerCase();
   return message.includes(String(columnName || '').toLowerCase()) && isMissingSchemaError(error);
+}
+
+function formatSupabaseError(error) {
+  if (!error) return 'Unknown error';
+  const message = error.message || String(error);
+  const code = error.code ? ` code=${error.code}` : '';
+  const details = error.details ? ` details=${error.details}` : '';
+  const hint = error.hint ? ` hint=${error.hint}` : '';
+  return `${message}${code}${details}${hint}`.trim();
+}
+
+function stripOptionalColumns(payload, error, columns) {
+  if (!error || !payload) return null;
+  const next = { ...payload };
+  let changed = false;
+
+  for (const column of columns) {
+    if (Object.prototype.hasOwnProperty.call(next, column) && isMissingColumnError(error, column)) {
+      delete next[column];
+      changed = true;
+    }
+  }
+
+  return changed ? next : null;
 }
 
 async function upsertDevice(deviceId, status, lat, lng) {
@@ -94,25 +118,28 @@ async function upsertDevice(deviceId, status, lat, lng) {
       ignoreDuplicates: false,
     });
 
-  // updated_at_ms is optional in some schemas; retry safely when absent.
-  if (error && isMissingColumnError(error, 'updated_at_ms')) {
-    const retryPayload = {
-      ...payload,
-    };
-    delete retryPayload.updated_at_ms;
+  // Some deployments use a minimal devices schema; retry when optional columns are missing.
+  if (error) {
+    const retryPayload = stripOptionalColumns(
+      payload,
+      error,
+      ['updated_at_ms', 'created_at_ms', 'last_lat', 'last_lng', 'last_seen']
+    );
 
-    const retryResult = await client
-      .from('devices')
-      .upsert(retryPayload, {
-        onConflict: 'device_id',
-        ignoreDuplicates: false,
-      });
+    if (retryPayload) {
+      const retryResult = await client
+        .from('devices')
+        .upsert(retryPayload, {
+          onConflict: 'device_id',
+          ignoreDuplicates: false,
+        });
 
-    error = retryResult.error;
+      error = retryResult.error;
+    }
   }
 
   if (error) {
-    console.error('[Supabase] upsertDevice error:', error.message || error);
+    console.error('[Supabase] upsertDevice error:', formatSupabaseError(error));
     return null;
   }
 
@@ -132,9 +159,25 @@ async function saveGpsLog(deviceId, latitude, longitude, requestId) {
     recorded_at: new Date().toISOString(),
   };
 
-  const { error } = await client
+  let { error } = await client
     .from('gps_logs')
     .insert(payload);
+
+  if (error) {
+    const retryPayload = stripOptionalColumns(
+      payload,
+      error,
+      ['request_id', 'recorded_at']
+    );
+
+    if (retryPayload) {
+      const retryResult = await client
+        .from('gps_logs')
+        .insert(retryPayload);
+
+      error = retryResult.error;
+    }
+  }
 
   if (error) throw error;
   return null;

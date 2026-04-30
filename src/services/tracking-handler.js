@@ -9,6 +9,11 @@ const {
 } = require('./supabase');
 
 const devices = new Map();
+const lastPersistedByDevice = new Map();
+const trackingActiveByDevice = new Map();
+
+const LOCATION_SAVE_INTERVAL_MS = 60000;
+const LOCATION_MOVEMENT_THRESHOLD = 0.0005;
 
 function handles(messageOrType) {
   const type = typeof messageOrType === 'string'
@@ -52,6 +57,52 @@ function ensureDevice(deviceId) {
   }
 
   return devices.get(id);
+}
+
+function setTrackingActive(deviceId, active) {
+  const id = String(deviceId || '').trim();
+  if (!id) return;
+  trackingActiveByDevice.set(id, Boolean(active));
+}
+
+function isTrackingActive(deviceId) {
+  const id = String(deviceId || '').trim();
+  if (!id) return false;
+  return trackingActiveByDevice.get(id) === true;
+}
+
+function extractDeviceId(msg) {
+  const direct = String(msg?.device_id || '').trim();
+  if (direct) return direct;
+  const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
+  return String(payload.device_id || '').trim();
+}
+
+function shouldPersistLocation(deviceId, latitude, longitude) {
+  const id = String(deviceId || '').trim();
+  if (!id) return false;
+
+  const cached = lastPersistedByDevice.get(id) || { at: 0, lat: null, lng: null };
+  const now = Date.now();
+  const timeSince = now - cached.at;
+
+  if (timeSince >= LOCATION_SAVE_INTERVAL_MS) return true;
+
+  if (cached.lat == null || cached.lng == null) return true;
+
+  const latDiff = Math.abs(latitude - cached.lat);
+  const lngDiff = Math.abs(longitude - cached.lng);
+  return latDiff > LOCATION_MOVEMENT_THRESHOLD || lngDiff > LOCATION_MOVEMENT_THRESHOLD;
+}
+
+function updatePersistedLocation(deviceId, latitude, longitude) {
+  const id = String(deviceId || '').trim();
+  if (!id) return;
+  lastPersistedByDevice.set(id, {
+    at: Date.now(),
+    lat: latitude,
+    lng: longitude,
+  });
 }
 
 function logSupabaseError(scope, err) {
@@ -120,7 +171,7 @@ function sendToRenderer(client, channel, data) {
 
 function _onDeviceOnline(msg, client) {
   const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
-  const deviceId = String(payload.device_id || '').trim();
+  const deviceId = extractDeviceId(msg) || String(payload.device_id || '').trim();
   if (!deviceId) return;
 
   const connectedAt = normalizeIsoTime(payload.connected_at, new Date().toISOString());
@@ -141,6 +192,9 @@ function _onDeviceOnline(msg, client) {
     last_location: existing?.last_location || device.last_location || null,
   });
 
+  upsertDevice(deviceId, 'online')
+    .catch((err) => logSupabaseError('upsertDevice(device_online)', err));
+
   sendToRenderer(client, 'mobile:device_online', {
     ...toPublicDevice(device),
     payload: {
@@ -151,7 +205,7 @@ function _onDeviceOnline(msg, client) {
 }
 
 function _onLocationUpdate(msg, client) {
-  const deviceId = String(msg?.device_id || '').trim();
+  const deviceId = extractDeviceId(msg);
   if (!deviceId) return;
 
   const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
@@ -162,6 +216,8 @@ function _onLocationUpdate(msg, client) {
   const timestamp = normalizeIsoTime(payload.timestamp, new Date().toISOString());
   const device = ensureDevice(deviceId);
   if (!device) return;
+
+  if (!isTrackingActive(deviceId)) return;
 
   if (!device.connected_at) {
     device.connected_at = timestamp;
@@ -187,6 +243,16 @@ function _onLocationUpdate(msg, client) {
     last_location: device.last_location,
   });
 
+  if (shouldPersistLocation(deviceId, latitude, longitude)) {
+    upsertDevice(deviceId, 'online', latitude, longitude)
+      .catch((err) => logSupabaseError('upsertDevice(location_update)', err));
+
+    saveGpsLog(deviceId, latitude, longitude, null)
+      .catch((err) => logSupabaseError('saveGpsLog(location_update)', err));
+
+    updatePersistedLocation(deviceId, latitude, longitude);
+  }
+
   sendToRenderer(client, 'mobile:location', {
     ...toPublicDevice(device),
     payload: {
@@ -199,7 +265,7 @@ function _onLocationUpdate(msg, client) {
 
 function _onDeviceOffline(msg, client) {
   const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
-  const deviceId = String(payload.device_id || '').trim();
+  const deviceId = extractDeviceId(msg) || String(payload.device_id || '').trim();
   if (!deviceId) return;
 
   const disconnectedAt = normalizeIsoTime(payload.disconnected_at, new Date().toISOString());
@@ -209,6 +275,17 @@ function _onDeviceOffline(msg, client) {
   device.status = 'offline';
   device.last_seen = disconnectedAt;
   deviceStore.updateDeviceStatus(deviceId, 'offline');
+  setTrackingActive(deviceId, false);
+
+  const lastLocation = device.last_location && typeof device.last_location === 'object'
+    ? device.last_location
+    : null;
+  const latitude = lastLocation ? toNumber(lastLocation.latitude ?? lastLocation.lat) : null;
+  const longitude = lastLocation ? toNumber(lastLocation.longitude ?? lastLocation.lng) : null;
+  if (latitude != null && longitude != null) {
+    upsertDevice(deviceId, 'offline', latitude, longitude)
+      .catch((err) => logSupabaseError('upsertDevice(device_offline)', err));
+  }
 
   sendToRenderer(client, 'mobile:device_offline', {
     ...toPublicDevice(device),
@@ -293,8 +370,6 @@ function _onGpsCommandResponse(msg, client) {
 }
 
 function handle(msg, client) {
-  console.log('[TrackingHandler] Handling:', msg?.action, 'from:', msg?.device_id || 'none');
-
   const type = String(msg?.type || '').trim().toLowerCase();
   if (type === 'command_response') {
     _onGpsCommandResponse(msg, client);
@@ -304,13 +379,41 @@ function handle(msg, client) {
   const action = normalizeAction(msg);
   if (!action) return;
 
+  if (action !== 'location_update') {
+    console.log('[TrackingHandler] Handling:', msg?.action, 'from:', msg?.device_id || 'none');
+  }
+
   if (action === 'device_online') {
     _onDeviceOnline(msg, client);
     return;
   }
 
+  if (action === 'tracking_approved') {
+    const deviceId = extractDeviceId(msg);
+    if (deviceId) setTrackingActive(deviceId, true);
+    return;
+  }
+
   if (action === 'location_update') {
     _onLocationUpdate(msg, client);
+    return;
+  }
+
+  if (action === 'tracking_session_end' || action === 'tracking_rejected') {
+    const deviceId = extractDeviceId(msg);
+    if (deviceId) {
+      setTrackingActive(deviceId, false);
+      const device = ensureDevice(deviceId);
+      const lastLocation = device && device.last_location && typeof device.last_location === 'object'
+        ? device.last_location
+        : null;
+      const latitude = lastLocation ? toNumber(lastLocation.latitude ?? lastLocation.lat) : null;
+      const longitude = lastLocation ? toNumber(lastLocation.longitude ?? lastLocation.lng) : null;
+      if (latitude != null && longitude != null) {
+        upsertDevice(deviceId, 'offline', latitude, longitude)
+          .catch((err) => logSupabaseError('upsertDevice(tracking_end)', err));
+      }
+    }
     return;
   }
 
@@ -321,6 +424,17 @@ function handle(msg, client) {
 
 function handleCommandResponse(msg, client) {
   recordCommandResponse(msg);
+  const action = String(msg?.action || '').trim().toLowerCase();
+  const status = String(msg?.status || '').trim().toLowerCase();
+  const deviceId = String(msg?.device_id || '').trim();
+  if (deviceId) {
+    if (action === 'tracking_approved' && status === 'success') {
+      setTrackingActive(deviceId, true);
+    }
+    if (action === 'tracking_rejected' || action === 'tracking_session_end') {
+      setTrackingActive(deviceId, false);
+    }
+  }
   handle(msg, client);
 }
 

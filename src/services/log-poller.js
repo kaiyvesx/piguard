@@ -4,8 +4,6 @@ const { BrowserWindow } = require('electron');
 const config = require('./backend.config');
 const BACKEND_URL = String(config.httpBaseUrl || '').trim().replace(/\/+$/, '');
 
-console.log('[LogPoller] Data source:', BACKEND_URL || 'not-configured');
-
 let supabase = null;
 try {
   supabase = require('./supabase');
@@ -15,11 +13,16 @@ try {
 
 let pollInterval = null;
 let pollInFlight = false;
+const disabledEndpoints = new Set();
+const warnedEndpoints = new Set();
 
 const deviceCache = new Map();
 const processedLogIds = new Set();
 const processedResponseIds = new Set();
 const lastSeenLogIdByDevice = new Map();
+
+// GPS threshold tracking: { deviceId => { lastSavedAt, lastSavedLat, lastSavedLng } }
+const gpsThresholdCache = new Map();
 
 function nowIso() {
   return new Date().toISOString();
@@ -29,6 +32,23 @@ function buildSafeError(err, fallback = 'Unknown error') {
   if (!err) return fallback;
   if (typeof err.message === 'string' && err.message.trim()) return err.message.trim();
   return fallback;
+}
+
+function emitActivityLog(action, message, level = 'info', payload = {}, deviceId = '-') {
+  sendToRenderer('backend:event', {
+    type: 'tracking:message_log',
+    entry: {
+      timestamp: nowIso(),
+      device_id: String(deviceId || '-').trim() || '-',
+      action: String(action || 'backend_activity').trim().toLowerCase() || 'backend_activity',
+      level: String(level || 'info').trim().toLowerCase() || 'info',
+      status: String(level || 'info').trim().toLowerCase() === 'error' ? 'error' : 'info',
+      payload: {
+        message: String(message || '').trim(),
+        ...payload,
+      },
+    },
+  });
 }
 
 function sendToRenderer(channel, data) {
@@ -225,11 +245,51 @@ function ensureKnownDevice(deviceId, options = {}) {
   });
 
   if (discovered) {
-    console.log('[LogPoller] New device:', id);
+    emitActivityLog('device_discovered', `New device discovered: ${id}`, 'info', { device_id: id }, id);
     emitDeviceOnline(id, device.userId, options.lastSeen || nowIso(), device.status);
   }
 
   return device;
+}
+
+function getGpsThreshold(deviceId) {
+  if (!gpsThresholdCache.has(deviceId)) {
+    gpsThresholdCache.set(deviceId, {
+      lastSavedAt: 0,
+      lastSavedLat: null,
+      lastSavedLng: null,
+    });
+  }
+  return gpsThresholdCache.get(deviceId);
+}
+
+function shouldSaveToSupabase(deviceId, latitude, longitude) {
+  const threshold = getGpsThreshold(deviceId);
+  const now = Date.now();
+  const timeSinceLastSave = now - threshold.lastSavedAt;
+
+  // Always save if 60 seconds passed
+  if (timeSinceLastSave >= 60000) {
+    return true;
+  }
+
+  // Check if device moved more than 0.0005 degrees (~50 meters)
+  const MOVEMENT_THRESHOLD = 0.0005;
+  if (threshold.lastSavedLat == null || threshold.lastSavedLng == null) {
+    return true; // First time
+  }
+
+  const latDiff = Math.abs(latitude - threshold.lastSavedLat);
+  const lngDiff = Math.abs(longitude - threshold.lastSavedLng);
+
+  return latDiff > MOVEMENT_THRESHOLD || lngDiff > MOVEMENT_THRESHOLD;
+}
+
+function updateGpsThreshold(deviceId, latitude, longitude) {
+  const threshold = getGpsThreshold(deviceId);
+  threshold.lastSavedAt = Date.now();
+  threshold.lastSavedLat = latitude;
+  threshold.lastSavedLng = longitude;
 }
 
 async function saveGpsIfPossible(deviceId, latitude, longitude, requestId) {
@@ -243,13 +303,14 @@ async function saveGpsIfPossible(deviceId, latitude, longitude, requestId) {
       await supabase.saveGpsLog(deviceId, latitude, longitude, requestId || null);
     }
   } catch (err) {
-    console.warn('[LogPoller] Supabase GPS persistence failed:', buildSafeError(err));
+    emitActivityLog('supabase_persistence_failed', buildSafeError(err), 'error', { device_id: deviceId }, deviceId);
   }
 }
 
 async function fetchWithAuth(path) {
   const endpoint = String(path || '').trim();
   if (!BACKEND_URL || !endpoint) return null;
+  if (disabledEndpoints.has(endpoint)) return null;
 
   const url = `${BACKEND_URL}${endpoint}`;
 
@@ -278,7 +339,22 @@ async function fetchWithAuth(path) {
     if (response.status === 204) return null;
 
     if (!response.ok) {
-      console.warn('[LogPoller] Request failed:', endpoint, response.status);
+      if (response.status === 404) {
+        if (!warnedEndpoints.has(endpoint)) {
+          warnedEndpoints.add(endpoint);
+          emitActivityLog('poller_endpoint_disabled', `${endpoint} returned 404 and was disabled`, 'error', {
+            endpoint,
+            status_code: response.status,
+          });
+        }
+        disabledEndpoints.add(endpoint);
+        return null;
+      }
+
+      emitActivityLog('request_failed', `${endpoint} returned HTTP ${response.status}`, 'error', {
+        endpoint,
+        status_code: response.status,
+      });
       return null;
     }
 
@@ -291,7 +367,10 @@ async function fetchWithAuth(path) {
       return null;
     }
   } catch (err) {
-    console.warn('[LogPoller] Request failed:', endpoint, buildSafeError(err));
+    if (!warnedEndpoints.has(endpoint)) {
+      warnedEndpoints.add(endpoint);
+      emitActivityLog('request_failed', buildSafeError(err), 'error', { endpoint });
+    }
     return null;
   } finally {
     if (timeout) clearTimeout(timeout);
@@ -367,7 +446,11 @@ async function processLogs(logs) {
 
     if (latitude == null || longitude == null) continue;
 
-    console.log('[LogPoller] GPS from', deviceId, latitude, longitude);
+    emitActivityLog('location_update', `${deviceId} reported ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, 'info', {
+      device_id: deviceId,
+      latitude,
+      longitude,
+    }, deviceId);
 
     const gpsTs = payload.timestamp || seenAt;
 
@@ -389,15 +472,19 @@ async function processLogs(logs) {
       userId: payload.user_id || null,
     });
 
-    try {
-      if (supabase && typeof supabase.upsertDevice === 'function') {
-        await supabase.upsertDevice(deviceId, 'online', latitude, longitude);
+    // Check thresholds before saving to Supabase (60s OR device moved >0.0005°)
+    if (shouldSaveToSupabase(deviceId, latitude, longitude)) {
+      try {
+        if (supabase && typeof supabase.upsertDevice === 'function') {
+          await supabase.upsertDevice(deviceId, 'online', latitude, longitude);
+        }
+        if (supabase && typeof supabase.saveGpsLog === 'function') {
+          await supabase.saveGpsLog(deviceId, latitude, longitude, logId);
+        }
+        updateGpsThreshold(deviceId, latitude, longitude);
+      } catch (err) {
+        console.error('[LogPoller] Supabase error:', buildSafeError(err));
       }
-      if (supabase && typeof supabase.saveGpsLog === 'function') {
-        await supabase.saveGpsLog(deviceId, latitude, longitude, logId);
-      }
-    } catch (err) {
-      console.error('[LogPoller] Supabase error:', buildSafeError(err));
     }
   }
 
@@ -437,6 +524,14 @@ async function fetchAndProcessDevices() {
       status,
       lastSeen,
     });
+
+    if (supabase && typeof supabase.upsertDevice === 'function') {
+      try {
+        await supabase.upsertDevice(deviceId, status, null, null);
+      } catch (err) {
+        emitActivityLog('supabase_persistence_failed', buildSafeError(err), 'error', { device_id: deviceId }, deviceId);
+      }
+    }
 
     const coords = extractCoordinates(deviceObj, null);
     if (coords) {
@@ -535,8 +630,6 @@ async function poll() {
   if (pollInFlight) return;
   pollInFlight = true;
 
-  console.log('[LogPoller] Polling admin logs...');
-
   try {
     await fetchAndProcessDevices();
 
@@ -555,7 +648,7 @@ async function poll() {
 
     emitDevicesList();
   } catch (err) {
-    console.warn('[LogPoller] Poll cycle failed:', buildSafeError(err));
+    emitActivityLog('poll_cycle_failed', buildSafeError(err), 'error');
   } finally {
     pollInFlight = false;
   }
@@ -565,16 +658,18 @@ function startPolling(intervalMs = 5000) {
   if (pollInterval) return;
 
   const safeInterval = Math.max(1000, Number(intervalMs) || 5000);
-  console.log('[LogPoller] Data source:', BACKEND_URL || 'not-configured');
-  console.log('[LogPoller] Starting - supports unlimited devices');
+  emitActivityLog('poller_started', `Polling backend at ${BACKEND_URL || 'not-configured'}`, 'info', {
+    interval_ms: safeInterval,
+    backend_url: BACKEND_URL || null,
+  });
 
   poll().catch((err) => {
-    console.warn('[LogPoller] Initial poll failed:', buildSafeError(err));
+    emitActivityLog('initial_poll_failed', buildSafeError(err), 'error');
   });
 
   pollInterval = setInterval(() => {
     poll().catch((err) => {
-      console.warn('[LogPoller] Poll failed:', buildSafeError(err));
+      emitActivityLog('poll_failed', buildSafeError(err), 'error');
     });
   }, safeInterval);
 }
