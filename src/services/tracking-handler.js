@@ -13,7 +13,23 @@ const lastPersistedByDevice = new Map();
 const trackingActiveByDevice = new Map();
 
 const LOCATION_SAVE_INTERVAL_MS = 60000;
-const LOCATION_MOVEMENT_THRESHOLD = 0.0005;
+const LOCATION_MOVEMENT_THRESHOLD_METERS = 10; // meters
+
+function _deg2rad(deg) {
+  return (deg * Math.PI) / 180;
+}
+
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return Infinity;
+  const R = 6371000; // Earth radius meters
+  const dLat = _deg2rad(lat2 - lat1);
+  const dLon = _deg2rad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+    + Math.cos(_deg2rad(lat1)) * Math.cos(_deg2rad(lat2))
+    * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 function isRaspiDeviceId(deviceId) {
   return String(deviceId || '').trim().toLowerCase().startsWith('raspi');
@@ -44,6 +60,15 @@ function normalizeIsoTime(value, fallback = null) {
 function toNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function isValidLocation(latitude, longitude) {
+  if (latitude == null || longitude == null) return false;
+  // Reject obviously invalid zero coordinates which are often placeholders
+  if (Math.abs(latitude) < 1e-6 && Math.abs(longitude) < 1e-6) return false;
+  if (latitude < -90 || latitude > 90) return false;
+  if (longitude < -180 || longitude > 180) return false;
+  return true;
 }
 
 function ensureDevice(deviceId) {
@@ -90,13 +115,15 @@ function shouldPersistLocation(deviceId, latitude, longitude) {
   const now = Date.now();
   const timeSince = now - cached.at;
 
+  // Persist if we've exceeded the periodic interval
   if (timeSince >= LOCATION_SAVE_INTERVAL_MS) return true;
 
+  // Persist if we don't have a prior persisted location
   if (cached.lat == null || cached.lng == null) return true;
 
-  const latDiff = Math.abs(latitude - cached.lat);
-  const lngDiff = Math.abs(longitude - cached.lng);
-  return latDiff > LOCATION_MOVEMENT_THRESHOLD || lngDiff > LOCATION_MOVEMENT_THRESHOLD;
+  // Otherwise persist only if movement exceeds threshold (meters)
+  const meters = distanceMeters(cached.lat, cached.lng, latitude, longitude);
+  return meters >= LOCATION_MOVEMENT_THRESHOLD_METERS;
 }
 
 function updatePersistedLocation(deviceId, latitude, longitude) {
@@ -216,6 +243,7 @@ function _onLocationUpdate(msg, client) {
   const latitude = toNumber(payload.latitude ?? payload.lat);
   const longitude = toNumber(payload.longitude ?? payload.lng);
   if (latitude == null || longitude == null) return;
+  if (!isValidLocation(latitude, longitude)) return;
 
   const timestamp = normalizeIsoTime(payload.timestamp, new Date().toISOString());
   const device = ensureDevice(deviceId);
@@ -245,10 +273,13 @@ function _onLocationUpdate(msg, client) {
     last_location: device.last_location,
   });
 
-  saveGpsLog(deviceId, latitude, longitude, null)
-    .catch((err) => logSupabaseError('saveGpsLog(location_update)', err));
-
+  // Only persist to Supabase if the device has moved beyond the threshold
+  // or the save interval has elapsed. This prevents flooding Supabase with
+  // identical per-second coordinates.
   if (shouldPersistLocation(deviceId, latitude, longitude)) {
+    saveGpsLog(deviceId, latitude, longitude, null)
+      .catch((err) => logSupabaseError('saveGpsLog(location_update)', err));
+
     upsertDevice(deviceId, 'online', latitude, longitude)
       .catch((err) => logSupabaseError('upsertDevice(location_update)', err));
 
@@ -312,6 +343,7 @@ function _onGpsCommandResponse(msg, client) {
   const latitude = toNumber(data.lat ?? data.latitude);
   const longitude = toNumber(data.lng ?? data.longitude);
   if (latitude == null || longitude == null) return;
+  if (!isValidLocation(latitude, longitude)) return;
 
   const timestamp = new Date().toISOString();
   const requestId = String(msg?.request_id || '').trim();
@@ -343,12 +375,18 @@ function _onGpsCommandResponse(msg, client) {
     last_location: device.last_location,
   });
   console.log('[TrackingHandler] Saved GPS to disk:', deviceId, latitude, longitude);
+  // Persist to Supabase only when the device moved beyond the threshold
+  // or the configured interval elapsed. This avoids flooding Supabase
+  // with duplicate manual command responses.
+  if (shouldPersistLocation(deviceId, latitude, longitude)) {
+    upsertDevice(deviceId, 'online', latitude, longitude)
+      .catch((err) => logSupabaseError('upsertDevice', err));
 
-  upsertDevice(deviceId, 'online', latitude, longitude)
-    .catch((err) => logSupabaseError('upsertDevice', err));
+    saveGpsLog(deviceId, latitude, longitude, requestId)
+      .catch((err) => logSupabaseError('saveGpsLog', err));
 
-  saveGpsLog(deviceId, latitude, longitude, requestId)
-    .catch((err) => logSupabaseError('saveGpsLog', err));
+    updatePersistedLocation(deviceId, latitude, longitude);
+  }
 
   sendToRenderer(client, 'mobile:gps_response', {
     deviceId,

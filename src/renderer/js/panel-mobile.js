@@ -27,6 +27,14 @@
     return String(deviceId || "").trim().toLowerCase().indexOf("raspi") === 0;
   }
 
+  function isValidLocation(lat, lng) {
+    if (lat == null || lng == null) { return false; }
+    if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) { return false; }
+    if (lat < -90 || lat > 90) { return false; }
+    if (lng < -180 || lng > 180) { return false; }
+    return true;
+  }
+
   function removeExcludedDevices() {
     Array.from(devices.keys()).forEach(function (deviceId) {
       if (isRaspiDeviceId(deviceId)) {
@@ -102,6 +110,10 @@
     var merged = Object.assign({}, existing, patch, { deviceId: deviceId, lastSeen: safeTs((patch && patch.lastSeen) || existing.lastSeen || Date.now()) });
     var lat = toNum(merged.lat != null ? merged.lat : merged.latitude);
     var lng = toNum(merged.lng != null ? merged.lng : merged.longitude);
+    if (!isValidLocation(lat, lng)) {
+      lat = existing.lat;
+      lng = existing.lng;
+    }
     merged.lat = lat;
     merged.lng = lng;
     devices.set(deviceId, merged);
@@ -198,6 +210,7 @@
     }
     listEl.innerHTML = gpsEvents.map(function (item) {
       var layer = getOrCreateLayer(item.deviceId);
+      if (!isValidLocation(item.latitude, item.longitude)) { return ""; }
       return "<div class=\"tracking-log-line kind-location\" style=\"border-left-color:" + layer.color + ";\"><span class=\"time\">[" + new Date(item.timestamp).toLocaleTimeString() + "]</span><span class=\"device\">[" + friendlyName(item.deviceId) + "]</span><span class=\"detail\">[" + item.latitude.toFixed(5) + ", " + item.longitude.toFixed(5) + "]</span></div>";
     }).join("");
   }
@@ -239,7 +252,10 @@
     if (!id || isRaspiDeviceId(id)) { return; }
     var lat = toNum(data.latitude != null ? data.latitude : data.lat);
     var lng = toNum(data.longitude != null ? data.longitude : data.lng);
+    if (!isValidLocation(lat, lng)) { return; }
     var timestamp = data.timestamp || Date.now();
+    var existing = devices.get(id);
+    if (existing && existing.lat === lat && existing.lng === lng) { return; }
     var updated = mergeDevice(id, { userId: data.userId || data.user_id || null, status: "active", lat: lat, lng: lng, lastSeen: timestamp });
     if (lat != null && lng != null) {
       updateMapForDevice(updated);
@@ -264,6 +280,10 @@
       var lastLocation = item.last_location || item.lastLocation || null;
       var lat = item.lat != null ? item.lat : (item.latitude != null ? item.latitude : (item.last_lat != null ? item.last_lat : (lastLocation ? lastLocation.lat || lastLocation.latitude : null)));
       var lng = item.lng != null ? item.lng : (item.longitude != null ? item.longitude : (item.last_lng != null ? item.last_lng : (lastLocation ? lastLocation.lng || lastLocation.longitude : null)));
+      if (!isValidLocation(toNum(lat), toNum(lng))) {
+        lat = null;
+        lng = null;
+      }
       var merged = mergeDevice(id, { userId: item.userId || item.user_id || null, status: item.status || "known", lat: lat, lng: lng, lastSeen: item.lastSeen || item.last_seen || Date.now() });
       updateMapForDevice(merged);
     });

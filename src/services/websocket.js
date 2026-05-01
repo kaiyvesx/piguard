@@ -330,7 +330,7 @@ class AdminWebSocketClient extends EventEmitter {
    * Send a command to a device via the backend server.
    * @param {string} action - Command action (e.g., 'get_gps', 'take_photo')
    * @param {object} payload - Command payload
-   * @param {string} [deviceId] - Target device ID (defaults to config)
+  * @param {string} [deviceId] - Target user ID (defaults to config)
    * @param {string} [requestId] - Custom request ID (auto-generated if not provided)
    * @returns {Promise<object>} Command response
    */
@@ -340,13 +340,17 @@ class AdminWebSocketClient extends EventEmitter {
     }
 
     const reqId = requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    let devId = deviceId || config.targetDeviceId;
+    let userId = deviceId || config.targetDeviceId;
     if (!deviceId && shouldAutoDetectTarget()) {
       const adbDeviceId = await getPreferredDeviceId();
       if (adbDeviceId) {
-        devId = adbDeviceId;
-        console.log('[AdminWS] Auto-selected ADB device:', devId);
+        userId = adbDeviceId;
+        console.log('[AdminWS] Auto-selected ADB target:', userId);
       }
+    }
+
+    if (!String(userId || '').trim()) {
+      throw new Error('user_id is required');
     }
 
     return new Promise((resolve, reject) => {
@@ -359,7 +363,8 @@ class AdminWebSocketClient extends EventEmitter {
 
       const msg = {
         type: 'command_request',
-        device_id: devId,
+        user_id: userId,
+        device_id: userId,
         action,
         request_id: reqId,
         payload,

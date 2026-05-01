@@ -290,11 +290,17 @@ function registerTrackingIPC(adminClient) {
       return { success: false, error: 'action is required' };
     }
 
+    const deviceRecord = deviceStore.getDevice(targetDeviceId) || null;
+    const targetUserId = String(deviceRecord?.user_id || deviceRecord?.userId || '').trim();
+    if (!targetUserId) {
+      return { success: false, error: `user_id is required for ${targetDeviceId}` };
+    }
+
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     try {
       trackingHandler.recordCommandSent(targetDeviceId, commandAction, requestId);
-      const data = await adminClient.sendCommand(commandAction, payload, targetDeviceId, requestId);
+      const data = await adminClient.sendCommand(commandAction, payload, targetUserId, requestId);
       return { success: true, data };
     } catch (err) {
       return { success: false, error: buildSafeError(err, 'Failed to send command') };
@@ -307,11 +313,17 @@ function registerTrackingIPC(adminClient) {
       return { ok: false, error: 'deviceId is required' };
     }
 
+    const deviceRecord = deviceStore.getDevice(targetDeviceId) || null;
+    const targetUserId = String(deviceRecord?.user_id || deviceRecord?.userId || '').trim();
+    if (!targetUserId) {
+      return { ok: false, error: `user_id is required for ${targetDeviceId}` };
+    }
+
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     try {
       trackingHandler.recordCommandSent(targetDeviceId, 'get_gps', requestId);
-      await adminClient.sendCommand('get_gps', {}, targetDeviceId, requestId);
+      await adminClient.sendCommand('get_gps', {}, targetUserId, requestId);
       return { ok: true, requestId };
     } catch (err) {
       return { ok: false, error: buildSafeError(err, 'Failed to send get_gps command') };

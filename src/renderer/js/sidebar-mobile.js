@@ -23,6 +23,14 @@
     return String(deviceId || "").trim().toLowerCase().indexOf("raspi") === 0;
   }
 
+  function isValidLocation(lat, lng) {
+    if (lat == null || lng == null) { return false; }
+    if (Math.abs(lat) < 1e-6 && Math.abs(lng) < 1e-6) { return false; }
+    if (lat < -90 || lat > 90) { return false; }
+    if (lng < -180 || lng > 180) { return false; }
+    return true;
+  }
+
   function colorFor(deviceId) {
     if (deviceColor.has(deviceId)) { return deviceColor.get(deviceId); }
     var idx = deviceColor.size;
@@ -37,6 +45,10 @@
     var merged = Object.assign({}, existing, patch, { deviceId: deviceId, lastSeen: safeTs((patch && patch.lastSeen) || existing.lastSeen || Date.now()) });
     merged.lat = toNum(merged.lat != null ? merged.lat : merged.latitude);
     merged.lng = toNum(merged.lng != null ? merged.lng : merged.longitude);
+    if (!isValidLocation(merged.lat, merged.lng)) {
+      merged.lat = existing.lat;
+      merged.lng = existing.lng;
+    }
     deviceMap.set(deviceId, merged);
     return merged;
   }
@@ -78,6 +90,7 @@
     }
     list.innerHTML = gpsEvents.slice(0, 10).map(function (item) {
       var dot = colorFor(item.deviceId);
+      if (!isValidLocation(item.latitude, item.longitude)) { return ""; }
       return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div>[" + new Date(item.timestamp).toLocaleTimeString() + "] [" + friendlyName(item.deviceId) + "]</div><div style=\"opacity:.84;\">[" + item.latitude.toFixed(5) + ", " + item.longitude.toFixed(5) + "]</div></div>";
     }).join("");
   }
@@ -88,7 +101,13 @@
     rows.forEach(function (item) {
       var id = getDeviceId(item);
       if (!id || isRaspiDeviceId(id)) { return; }
-      mergeDevice(id, { userId: item.userId || item.user_id || null, status: item.status || "known", lat: item.lat != null ? item.lat : item.latitude, lng: item.lng != null ? item.lng : item.longitude, lastSeen: item.lastSeen || item.last_seen || Date.now() });
+      var lat = item.lat != null ? item.lat : item.latitude;
+      var lng = item.lng != null ? item.lng : item.longitude;
+      if (!isValidLocation(toNum(lat), toNum(lng))) {
+        lat = null;
+        lng = null;
+      }
+      mergeDevice(id, { userId: item.userId || item.user_id || null, status: item.status || "known", lat: lat, lng: lng, lastSeen: item.lastSeen || item.last_seen || Date.now() });
       colorFor(id);
     });
     renderDevices();
@@ -99,7 +118,10 @@
     if (!id || isRaspiDeviceId(id)) { return; }
     var lat = toNum(payload && payload.latitude != null ? payload.latitude : payload && payload.lat);
     var lng = toNum(payload && payload.longitude != null ? payload.longitude : payload && payload.lng);
+    if (!isValidLocation(lat, lng)) { return; }
     var ts = payload && payload.timestamp != null ? payload.timestamp : Date.now();
+    var existing = deviceMap.get(id);
+    if (existing && existing.lat === lat && existing.lng === lng) { return; }
     mergeDevice(id, { status: "active", lastSeen: ts, lat: lat, lng: lng, userId: payload && payload.userId || payload && payload.user_id || null });
     colorFor(id);
     if (lat != null && lng != null) {
@@ -146,11 +168,11 @@
       gpsEvents = events.slice(0, 10).map(function (item) {
         return {
           deviceId: String(item.deviceId || "").trim(),
-          latitude: toNum(item.latitude) || 0,
-          longitude: toNum(item.longitude) || 0,
+          latitude: (toNum(item.latitude) != null) ? toNum(item.latitude) : null,
+          longitude: (toNum(item.longitude) != null) ? toNum(item.longitude) : null,
           timestamp: safeTs(item.timestamp)
         };
-      });
+      }).filter(function (it) { return it.latitude != null && it.longitude != null; });
       renderGpsLog();
     });
   }

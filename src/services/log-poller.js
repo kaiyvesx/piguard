@@ -76,6 +76,14 @@ function toFiniteNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function isValidLocation(latitude, longitude) {
+  if (latitude == null || longitude == null) return false;
+  if (Math.abs(latitude) < 1e-6 && Math.abs(longitude) < 1e-6) return false;
+  if (latitude < -90 || latitude > 90) return false;
+  if (longitude < -180 || longitude > 180) return false;
+  return true;
+}
+
 function extractDeviceId(value) {
   if (typeof value === 'string') {
     const id = value.trim();
@@ -305,12 +313,18 @@ async function saveGpsIfPossible(deviceId, latitude, longitude, requestId) {
   if (isRaspiDeviceId(deviceId)) return;
 
   try {
+    // Respect movement/interval threshold before saving
+    if (!shouldSaveToSupabase(deviceId, latitude, longitude)) return;
+
     if (typeof supabase.upsertDevice === 'function') {
       await supabase.upsertDevice(deviceId, 'online', latitude, longitude);
     }
     if (typeof supabase.saveGpsLog === 'function') {
       await supabase.saveGpsLog(deviceId, latitude, longitude, requestId || null);
     }
+
+    // update local threshold cache after successful persistence
+    updateGpsThreshold(deviceId, latitude, longitude);
   } catch (err) {
     emitActivityLog('supabase_persistence_failed', buildSafeError(err), 'error', { device_id: deviceId }, deviceId);
   }
@@ -453,6 +467,7 @@ async function processLogs(logs) {
     const longitude = toFiniteNumber(rawLng);
 
     if (latitude == null || longitude == null) continue;
+    if (!isValidLocation(latitude, longitude)) continue;
 
     if (!isRaspiDeviceId(deviceId)) {
       emitActivityLog('location_update', `${deviceId} reported ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, 'info', {
@@ -483,14 +498,9 @@ async function processLogs(logs) {
     });
 
     try {
-      if (!isRaspiDeviceId(deviceId) && supabase && typeof supabase.saveGpsLog === 'function') {
-        await supabase.saveGpsLog(deviceId, latitude, longitude, logId);
-      }
-
-      // Keep device upserts rate-limited, but do not sample gps_logs.
-      if (!isRaspiDeviceId(deviceId) && shouldSaveToSupabase(deviceId, latitude, longitude) && supabase && typeof supabase.upsertDevice === 'function') {
-        await supabase.upsertDevice(deviceId, 'online', latitude, longitude);
-        updateGpsThreshold(deviceId, latitude, longitude);
+      // Centralized persistence: only save GPS logs/upserts when threshold allows.
+      if (!isRaspiDeviceId(deviceId)) {
+        await saveGpsIfPossible(deviceId, latitude, longitude, logId);
       }
     } catch (err) {
       console.error('[LogPoller] Supabase error:', buildSafeError(err));
