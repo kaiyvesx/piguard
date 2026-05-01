@@ -611,6 +611,10 @@
     return `${raw.slice(0, 8)}...`;
   }
 
+  function isRaspiDeviceId(deviceId) {
+    return String(deviceId || '').trim().toLowerCase().startsWith('raspi');
+  }
+
   function normalizePresenceSource(source) {
     const raw = String(source || '').trim().toLowerCase();
     if (raw === 'raspi') return 'raspi';
@@ -1226,6 +1230,7 @@
 
   function appendTrackingMessage(entry) {
     if (!entry || typeof entry !== 'object') return;
+    if (isRaspiDeviceId(entry.device_id)) return;
     const normalized = {
       timestamp: normalizeIsoTime(entry.timestamp, new Date().toISOString()),
       device_id: String(entry.device_id || '').trim() || '-',

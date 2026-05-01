@@ -11,14 +11,16 @@ from pydantic import BaseModel, Field
 from .auth_tokens import validate_admin_token, validate_mobile_token
 from .http_auth import require_admin_auth, require_mobile_auth
 from .hub import RealtimeHub, new_request_id
-from .models import AdminCommandCreate, CommandResponseIn
+from .models import AdminCommandCreate, CommandResponseIn, DeviceLogIn
 from .sqlite_log import audit_log_from_env
 from .store import now_ms, store
+from .supabase_tracking import tracking_store_from_env
 
 load_dotenv()
 
 audit = audit_log_from_env()
 hub = RealtimeHub(audit, store)
+tracking_store = tracking_store_from_env()
 
 app = FastAPI(title="Remote Device Backend", version="1.1.0")
 
@@ -47,14 +49,16 @@ def health() -> Dict[str, Any]:
 
 
 @app.get("/command", dependencies=[Depends(require_mobile_auth)])
-def get_command(device_id: str = Query(..., min_length=1)):
-    item = store.fetch_next_command(device_id=device_id)
+def get_command(user_id: str = Query(..., min_length=1)):
+    item = store.fetch_next_command(user_id=user_id)
     if item is None:
         return Response(status_code=204)
 
     return {
         "command_id": item.command_id,
+        "user_id": item.user_id,
         "device_id": item.device_id,
+        "device_name": item.device_name,
         "action": item.action,
         "payload": item.payload,
         "issued_at": item.created_at,
@@ -66,7 +70,9 @@ async def post_response(body: CommandResponseIn):
     msg: Dict[str, Any] = {
         "type": "command_response",
         "request_id": body.command_id,
+        "user_id": body.user_id,
         "device_id": body.device_id,
+        "device_name": body.device_name,
         "action": body.action,
         "status": body.status,
         "executed_at": body.executed_at,
@@ -81,9 +87,46 @@ async def post_response(body: CommandResponseIn):
 
 
 @app.post("/logs", dependencies=[Depends(require_mobile_auth)], status_code=201)
-def post_logs(payload: Dict[str, Any]):
-    item = store.save_log(payload)
+async def post_logs(payload: DeviceLogIn):
+    body = payload.model_dump(exclude_none=True)
+    item = store.save_log(body)
+    event_action = body.get("action") if isinstance(body.get("action"), str) else None
+    event_type = body.get("type") if isinstance(body.get("type"), str) else None
+    tracking_events = {
+        "tracking_request",
+        "location_update",
+        "tracking_session_end",
+    }
+    # For location updates, buffer on the server (to reduce Supabase writes).
+    if event_type == "location_update" and tracking_store is not None and body.get("user_id"):
+        try:
+            if hasattr(tracking_store, "buffer_location_update"):
+                tracking_store.buffer_location_update(body)
+            else:
+                tracking_store.insert_location_update(body)
+        except Exception:
+            # Keep log ingestion available even if Supabase is temporarily unavailable.
+            pass
 
+    # On explicit tracking session end, flush buffered history for the user.
+    if event_type == "tracking_session_end" and tracking_store is not None and body.get("user_id"):
+        try:
+            if hasattr(tracking_store, "flush_user_history"):
+                tracking_store.flush_user_history(body.get("user_id"))
+        except Exception:
+            pass
+    if (event_action in tracking_events) or (event_type in tracking_events):
+        await hub.relay_device_event(
+            {
+                "user_id": body.get("user_id"),
+                "device_id": body.get("device_id"),
+                "device_name": body.get("device_name"),
+                "action": event_action,
+                "event": event_type,
+                "payload": body,
+                "received_at": item.received_at,
+            }
+        )
     return {"ok": True, "log_id": item.id}
 
 
@@ -91,7 +134,7 @@ def post_logs(payload: Dict[str, Any]):
 async def admin_create_command(body: AdminCommandCreate):
     rid = body.request_id or new_request_id()
     item = await hub.admin_issue_command(
-        device_id=body.device_id,
+        user_id=body.user_id,
         action=body.action,
         request_id=rid,
         payload=body.payload,
@@ -102,38 +145,63 @@ async def admin_create_command(body: AdminCommandCreate):
 
 @app.get("/admin/commands", dependencies=[Depends(require_admin_auth)])
 def admin_list_commands(
-    device_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     action: Optional[str] = None,
     status: Optional[str] = None,
 ):
-    items = [x.__dict__ for x in store.list_commands(device_id=device_id, action=action, status=status)]
+    items = [x.__dict__ for x in store.list_commands(user_id=user_id, action=action, status=status)]
     return {"ok": True, "count": len(items), "commands": items}
 
 
 @app.get("/admin/responses", dependencies=[Depends(require_admin_auth)])
 def admin_list_responses(
-    device_id: Optional[str] = None,
+    user_id: Optional[str] = None,
     command_id: Optional[str] = None,
     action: Optional[str] = None,
 ):
-    items = [x.__dict__ for x in store.list_responses(device_id=device_id, command_id=command_id, action=action)]
+    items = [x.__dict__ for x in store.list_responses(user_id=user_id, command_id=command_id, action=action)]
     return {"ok": True, "count": len(items), "responses": items}
 
 
-@app.get("/admin/devices", dependencies=[Depends(require_admin_auth)])
-def admin_list_devices():
-    items = store.list_devices()
-    return {"ok": True, "count": len(items), "devices": items}
+@app.get("/admin/users", dependencies=[Depends(require_admin_auth)])
+def admin_list_users():
+    items = store.list_users()
+    return {"ok": True, "count": len(items), "users": items}
 
 
 @app.get("/admin/logs", dependencies=[Depends(require_admin_auth)])
-def admin_list_logs(limit: int = Query(default=200, ge=1, le=1000)):
-    logs = store.list_logs(limit=limit)
+def admin_list_logs(
+    limit: int = Query(default=200, ge=1, le=1000),
+    user_id: Optional[str] = None,
+):
+    logs = sorted(store.logs, key=lambda x: x.received_at, reverse=True)
+    if user_id:
+        logs = [x for x in logs if x.user_id == user_id]
+    logs = logs[:limit]
     return {"ok": True, "count": len(logs), "logs": [x.__dict__ for x in logs]}
 
 
+@app.get("/admin/locations/latest", dependencies=[Depends(require_admin_auth)])
+def admin_latest_locations():
+    if tracking_store is None:
+        return {"ok": False, "reason": "Supabase tracking store not configured", "locations": []}
+    items = tracking_store.list_latest_locations()
+    return {"ok": True, "count": len(items), "locations": items}
+
+
+@app.get("/admin/locations/history", dependencies=[Depends(require_admin_auth)])
+def admin_location_history(
+    user_id: Optional[str] = None,
+    limit: int = Query(default=200, ge=1, le=1000),
+):
+    if tracking_store is None:
+        return {"ok": False, "reason": "Supabase tracking store not configured", "locations": []}
+    items = tracking_store.list_location_history(user_id=user_id, limit=limit)
+    return {"ok": True, "count": len(items), "locations": items}
+
+
 class AdminHttpCommand(BaseModel):
-    device_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
     action: str = Field(min_length=1)
     request_id: Optional[str] = None
     payload: Dict[str, Any] = Field(default_factory=dict)
@@ -149,7 +217,7 @@ async def admin_command_http(
 
     rid = body.request_id or new_request_id()
     item = await hub.admin_issue_command(
-        device_id=body.device_id,
+        user_id=body.user_id,
         action=body.action,
         request_id=rid,
         payload=body.payload,
@@ -158,7 +226,7 @@ async def admin_command_http(
     return {
         "ok": True,
         "request_id": item.command_id,
-        "device_id": body.device_id,
+        "user_id": body.user_id,
         "action": body.action,
         "command": item.__dict__,
     }
@@ -202,11 +270,11 @@ async def ws_admin(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "pong"})
                 continue
 
-            device_id = msg.get("device_id")
+            user_id = msg.get("user_id")
             action = msg.get("action")
-            if msg.get("type") == "command_request" or (device_id and action):
-                if not device_id or not action:
-                    await websocket.send_json({"type": "error", "message": "device_id and action are required"})
+            if msg.get("type") == "command_request" or (user_id and action):
+                if not user_id or not action:
+                    await websocket.send_json({"type": "error", "message": "user_id and action are required"})
                     continue
 
                 request_id = msg.get("request_id") if isinstance(msg.get("request_id"), str) else None
@@ -214,7 +282,7 @@ async def ws_admin(websocket: WebSocket) -> None:
                 payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
 
                 item = await hub.admin_issue_command(
-                    device_id=str(device_id),
+                    user_id=str(user_id),
                     action=str(action),
                     request_id=request_id,
                     payload=payload,
@@ -224,7 +292,9 @@ async def ws_admin(websocket: WebSocket) -> None:
                     {
                         "type": "accepted",
                         "request_id": item.command_id,
-                        "device_id": str(device_id),
+                        "user_id": str(user_id),
+                        "device_id": item.device_id,
+                        "device_name": item.device_name,
                         "action": str(action),
                     }
                 )
@@ -236,7 +306,12 @@ async def ws_admin(websocket: WebSocket) -> None:
         await hub.remove_admin(websocket)
 
 
-def _normalize_device_response(device_id: str, msg: Dict[str, Any]) -> Dict[str, Any] | None:
+def _normalize_device_response(
+    user_id: str,
+    device_id: str | None,
+    device_name: str | None,
+    msg: Dict[str, Any],
+) -> Dict[str, Any] | None:
     request_id = msg.get("request_id")
     if not isinstance(request_id, str) or not request_id.strip():
         return None
@@ -271,7 +346,9 @@ def _normalize_device_response(device_id: str, msg: Dict[str, Any]) -> Dict[str,
     normalized: Dict[str, Any] = {
         "type": "command_response",
         "request_id": request_id.strip(),
+        "user_id": user_id,
         "device_id": device_id,
+        "device_name": device_name,
         "action": action,
         "status": status_val,
     }
@@ -296,7 +373,9 @@ def _normalize_device_response(device_id: str, msg: Dict[str, Any]) -> Dict[str,
 @app.websocket("/ws/device")
 async def ws_device(websocket: WebSocket) -> None:
     await websocket.accept()
+    user_id: str | None = None
     device_id: str | None = None
+    device_name: str | None = None
 
     try:
         raw = await websocket.receive_json()
@@ -308,8 +387,8 @@ async def ws_device(websocket: WebSocket) -> None:
         await _close_unauthorized(websocket, code=4400)
         return
 
-    did = raw.get("device_id")
-    if not isinstance(did, str) or not did.strip():
+    uid = raw.get("user_id")
+    if not isinstance(uid, str) or not uid.strip():
         await _close_unauthorized(websocket, code=4400)
         return
 
@@ -321,9 +400,23 @@ async def ws_device(websocket: WebSocket) -> None:
         await _close_unauthorized(websocket)
         return
 
-    device_id = did.strip()
-    await hub.bind_device(device_id, websocket)
-    await websocket.send_json({"type": "ready", "device_id": device_id})
+    user_id = uid.strip()
+    did = raw.get("device_id")
+    if isinstance(did, str) and did.strip():
+        device_id = did.strip()
+    dname = raw.get("device_name")
+    if isinstance(dname, str) and dname.strip():
+        device_name = dname.strip()
+
+    await hub.bind_device(user_id, device_id, device_name, websocket)
+    await websocket.send_json(
+        {
+            "type": "ready",
+            "user_id": user_id,
+            "device_id": device_id,
+            "device_name": device_name,
+        }
+    )
 
     try:
         while True:
@@ -332,7 +425,7 @@ async def ws_device(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "pong"})
                 continue
 
-            normalized = _normalize_device_response(device_id, msg)
+            normalized = _normalize_device_response(user_id, device_id, device_name, msg)
             if normalized is None:
                 continue
 
@@ -340,8 +433,8 @@ async def ws_device(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        if device_id is not None:
-            await hub.unbind_device(device_id, websocket)
+        if user_id is not None:
+            await hub.unbind_device(user_id, device_id, websocket)
 
 
 @app.exception_handler(HTTPException)

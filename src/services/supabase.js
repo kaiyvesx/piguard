@@ -13,9 +13,12 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
 
 const supabaseUrl = String(process.env.SUPABASE_URL || '').trim();
 const supabaseAnonKey = String(process.env.SUPABASE_ANON_KEY || '').trim();
+const supabaseServiceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 
-const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+const supabaseReadWriteKey = supabaseServiceRoleKey || supabaseAnonKey;
+
+const supabase = supabaseUrl && supabaseReadWriteKey
+  ? createClient(supabaseUrl, supabaseReadWriteKey, {
       auth: {
         persistSession: false,
       },
@@ -23,6 +26,7 @@ const supabase = supabaseUrl && supabaseAnonKey
   : null;
 
 let warnedMissingConfig = false;
+let warnedReadOnlyConfig = false;
 let presenceHistoryUnavailable = false;
 
 function getClient() {
@@ -30,7 +34,12 @@ function getClient() {
 
   if (!warnedMissingConfig) {
     warnedMissingConfig = true;
-    console.warn('[Supabase] SUPABASE_URL/SUPABASE_ANON_KEY are missing. Persistence is disabled.');
+    console.warn('[Supabase] SUPABASE_URL and a Supabase key are required. Persistence is disabled.');
+  }
+
+  if (supabaseUrl && supabaseAnonKey && !supabaseServiceRoleKey && !warnedReadOnlyConfig) {
+    warnedReadOnlyConfig = true;
+    console.warn('[Supabase] Using SUPABASE_ANON_KEY only. If your tables have RLS enabled, inserts may be blocked until SUPABASE_SERVICE_ROLE_KEY is configured.');
   }
 
   return null;

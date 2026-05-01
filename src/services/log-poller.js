@@ -34,6 +34,10 @@ function buildSafeError(err, fallback = 'Unknown error') {
   return fallback;
 }
 
+function isRaspiDeviceId(deviceId) {
+  return String(deviceId || '').trim().toLowerCase().startsWith('raspi');
+}
+
 function emitActivityLog(action, message, level = 'info', payload = {}, deviceId = '-') {
   sendToRenderer('backend:event', {
     type: 'tracking:message_log',
@@ -245,6 +249,10 @@ function ensureKnownDevice(deviceId, options = {}) {
   });
 
   if (discovered) {
+    if (isRaspiDeviceId(id)) {
+      return device;
+    }
+
     emitActivityLog('device_discovered', `New device discovered: ${id}`, 'info', { device_id: id }, id);
     emitDeviceOnline(id, device.userId, options.lastSeen || nowIso(), device.status);
   }
@@ -294,6 +302,7 @@ function updateGpsThreshold(deviceId, latitude, longitude) {
 
 async function saveGpsIfPossible(deviceId, latitude, longitude, requestId) {
   if (!supabase || typeof supabase !== 'object') return;
+  if (isRaspiDeviceId(deviceId)) return;
 
   try {
     if (typeof supabase.upsertDevice === 'function') {
@@ -408,7 +417,6 @@ async function processLogs(logs) {
       : String(rawSeenAt || nowIso());
 
     if (isNewDevice(deviceId)) {
-      console.log('[LogPoller] New device:', deviceId);
       updateDeviceCache(deviceId, {
         userId: payload.user_id || null,
         status: 'active',
@@ -446,11 +454,13 @@ async function processLogs(logs) {
 
     if (latitude == null || longitude == null) continue;
 
-    emitActivityLog('location_update', `${deviceId} reported ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, 'info', {
-      device_id: deviceId,
-      latitude,
-      longitude,
-    }, deviceId);
+    if (!isRaspiDeviceId(deviceId)) {
+      emitActivityLog('location_update', `${deviceId} reported ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`, 'info', {
+        device_id: deviceId,
+        latitude,
+        longitude,
+      }, deviceId);
+    }
 
     const gpsTs = payload.timestamp || seenAt;
 
@@ -472,19 +482,18 @@ async function processLogs(logs) {
       userId: payload.user_id || null,
     });
 
-    // Check thresholds before saving to Supabase (60s OR device moved >0.0005°)
-    if (shouldSaveToSupabase(deviceId, latitude, longitude)) {
-      try {
-        if (supabase && typeof supabase.upsertDevice === 'function') {
-          await supabase.upsertDevice(deviceId, 'online', latitude, longitude);
-        }
-        if (supabase && typeof supabase.saveGpsLog === 'function') {
-          await supabase.saveGpsLog(deviceId, latitude, longitude, logId);
-        }
-        updateGpsThreshold(deviceId, latitude, longitude);
-      } catch (err) {
-        console.error('[LogPoller] Supabase error:', buildSafeError(err));
+    try {
+      if (!isRaspiDeviceId(deviceId) && supabase && typeof supabase.saveGpsLog === 'function') {
+        await supabase.saveGpsLog(deviceId, latitude, longitude, logId);
       }
+
+      // Keep device upserts rate-limited, but do not sample gps_logs.
+      if (!isRaspiDeviceId(deviceId) && shouldSaveToSupabase(deviceId, latitude, longitude) && supabase && typeof supabase.upsertDevice === 'function') {
+        await supabase.upsertDevice(deviceId, 'online', latitude, longitude);
+        updateGpsThreshold(deviceId, latitude, longitude);
+      }
+    } catch (err) {
+      console.error('[LogPoller] Supabase error:', buildSafeError(err));
     }
   }
 
@@ -525,7 +534,7 @@ async function fetchAndProcessDevices() {
       lastSeen,
     });
 
-    if (supabase && typeof supabase.upsertDevice === 'function') {
+    if (!isRaspiDeviceId(deviceId) && supabase && typeof supabase.upsertDevice === 'function') {
       try {
         await supabase.upsertDevice(deviceId, status, null, null);
       } catch (err) {

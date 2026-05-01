@@ -15,6 +15,10 @@ const trackingActiveByDevice = new Map();
 const LOCATION_SAVE_INTERVAL_MS = 60000;
 const LOCATION_MOVEMENT_THRESHOLD = 0.0005;
 
+function isRaspiDeviceId(deviceId) {
+  return String(deviceId || '').trim().toLowerCase().startsWith('raspi');
+}
+
 function handles(messageOrType) {
   const type = typeof messageOrType === 'string'
     ? messageOrType
@@ -172,7 +176,7 @@ function sendToRenderer(client, channel, data) {
 function _onDeviceOnline(msg, client) {
   const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
   const deviceId = extractDeviceId(msg) || String(payload.device_id || '').trim();
-  if (!deviceId) return;
+  if (!deviceId || isRaspiDeviceId(deviceId)) return;
 
   const connectedAt = normalizeIsoTime(payload.connected_at, new Date().toISOString());
   const device = ensureDevice(deviceId);
@@ -206,7 +210,7 @@ function _onDeviceOnline(msg, client) {
 
 function _onLocationUpdate(msg, client) {
   const deviceId = extractDeviceId(msg);
-  if (!deviceId) return;
+  if (!deviceId || isRaspiDeviceId(deviceId)) return;
 
   const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
   const latitude = toNumber(payload.latitude ?? payload.lat);
@@ -216,8 +220,6 @@ function _onLocationUpdate(msg, client) {
   const timestamp = normalizeIsoTime(payload.timestamp, new Date().toISOString());
   const device = ensureDevice(deviceId);
   if (!device) return;
-
-  if (!isTrackingActive(deviceId)) return;
 
   if (!device.connected_at) {
     device.connected_at = timestamp;
@@ -243,12 +245,12 @@ function _onLocationUpdate(msg, client) {
     last_location: device.last_location,
   });
 
+  saveGpsLog(deviceId, latitude, longitude, null)
+    .catch((err) => logSupabaseError('saveGpsLog(location_update)', err));
+
   if (shouldPersistLocation(deviceId, latitude, longitude)) {
     upsertDevice(deviceId, 'online', latitude, longitude)
       .catch((err) => logSupabaseError('upsertDevice(location_update)', err));
-
-    saveGpsLog(deviceId, latitude, longitude, null)
-      .catch((err) => logSupabaseError('saveGpsLog(location_update)', err));
 
     updatePersistedLocation(deviceId, latitude, longitude);
   }

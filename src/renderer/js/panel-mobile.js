@@ -23,6 +23,19 @@
   var isActive = shared.isActive || function () { return false; };
   var colorFromIndex = shared.colorFromIndex || function (idx) { return "hsl(" + ((idx * 47) % 360) + ",72%,54%)"; };
 
+  function isRaspiDeviceId(deviceId) {
+    return String(deviceId || "").trim().toLowerCase().indexOf("raspi") === 0;
+  }
+
+  function removeExcludedDevices() {
+    Array.from(devices.keys()).forEach(function (deviceId) {
+      if (isRaspiDeviceId(deviceId)) {
+        devices.delete(deviceId);
+        deviceLayers.delete(deviceId);
+      }
+    });
+  }
+
   function getOrCreateLayer(deviceId) {
     if (!deviceLayers.has(deviceId)) {
       var idx = deviceLayers.size;
@@ -84,7 +97,7 @@
   }
 
   function mergeDevice(deviceId, patch) {
-    if (!deviceId) { return null; }
+    if (!deviceId || isRaspiDeviceId(deviceId)) { return null; }
     var existing = devices.get(deviceId) || { deviceId: deviceId, userId: null, status: "known", lastSeen: null, lat: null, lng: null };
     var merged = Object.assign({}, existing, patch, { deviceId: deviceId, lastSeen: safeTs((patch && patch.lastSeen) || existing.lastSeen || Date.now()) });
     var lat = toNum(merged.lat != null ? merged.lat : merged.latitude);
@@ -202,7 +215,7 @@
 
   function handleDeviceOnline(data) {
     var id = getDeviceId(data);
-    if (!id) { return; }
+    if (!id || isRaspiDeviceId(id)) { return; }
     mergeDevice(id, { userId: data.userId || data.user_id || null, status: data.status || "active", lastSeen: data.connectedAt || data.lastSeen || Date.now() });
     if (!selectedDeviceId) {
       selectedDeviceId = id;
@@ -215,7 +228,7 @@
 
   function handleDeviceOffline(data) {
     var id = getDeviceId(data);
-    if (!id) { return; }
+    if (!id || isRaspiDeviceId(id)) { return; }
     mergeDevice(id, { status: "inactive", lastSeen: data.lastSeen || Date.now() });
     renderCards();
     emitSidebarSnapshot();
@@ -223,7 +236,7 @@
 
   function handleLocation(data) {
     var id = getDeviceId(data);
-    if (!id) { return; }
+    if (!id || isRaspiDeviceId(id)) { return; }
     var lat = toNum(data.latitude != null ? data.latitude : data.lat);
     var lng = toNum(data.longitude != null ? data.longitude : data.lng);
     var timestamp = data.timestamp || Date.now();
@@ -238,19 +251,28 @@
 
   function handleDevicesList(payload) {
     var rows = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.devices) ? payload.devices : []);
-    if (!rows.length) { renderCards(); renderGpsLog(); return; }
+    if (!rows.length) {
+      removeExcludedDevices();
+      renderCards();
+      renderGpsLog();
+      return;
+    }
+
     rows.forEach(function (item) {
       var id = getDeviceId(item);
-      if (!id) { return; }
+      if (!id || isRaspiDeviceId(id)) { return; }
       var lastLocation = item.last_location || item.lastLocation || null;
       var lat = item.lat != null ? item.lat : (item.latitude != null ? item.latitude : (item.last_lat != null ? item.last_lat : (lastLocation ? lastLocation.lat || lastLocation.latitude : null)));
       var lng = item.lng != null ? item.lng : (item.longitude != null ? item.longitude : (item.last_lng != null ? item.last_lng : (lastLocation ? lastLocation.lng || lastLocation.longitude : null)));
       var merged = mergeDevice(id, { userId: item.userId || item.user_id || null, status: item.status || "known", lat: lat, lng: lng, lastSeen: item.lastSeen || item.last_seen || Date.now() });
       updateMapForDevice(merged);
     });
+
+    removeExcludedDevices();
+
     if (!selectedDeviceId && rows.length) {
       var firstId = getDeviceId(rows[0]);
-      if (firstId) {
+      if (firstId && !isRaspiDeviceId(firstId)) {
         selectedDeviceId = firstId;
         expandedDeviceId = firstId;
         centerMapOnDevice(firstId);

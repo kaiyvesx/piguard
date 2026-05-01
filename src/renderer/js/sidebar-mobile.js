@@ -19,6 +19,10 @@
   var isActive = shared.isActive || function () { return false; };
   var colorFromIndex = shared.colorFromIndex || function (idx) { return "hsl(" + ((idx * 47) % 360) + ",72%,54%)"; };
 
+  function isRaspiDeviceId(deviceId) {
+    return String(deviceId || "").trim().toLowerCase().indexOf("raspi") === 0;
+  }
+
   function colorFor(deviceId) {
     if (deviceColor.has(deviceId)) { return deviceColor.get(deviceId); }
     var idx = deviceColor.size;
@@ -28,7 +32,7 @@
   }
 
   function mergeDevice(deviceId, patch) {
-    if (!deviceId) { return null; }
+    if (!deviceId || isRaspiDeviceId(deviceId)) { return null; }
     var existing = deviceMap.get(deviceId) || { deviceId: deviceId, status: "known", lastSeen: null, lat: null, lng: null, userId: null };
     var merged = Object.assign({}, existing, patch, { deviceId: deviceId, lastSeen: safeTs((patch && patch.lastSeen) || existing.lastSeen || Date.now()) });
     merged.lat = toNum(merged.lat != null ? merged.lat : merged.latitude);
@@ -83,7 +87,7 @@
     if (!rows.length) { renderDevices(); return; }
     rows.forEach(function (item) {
       var id = getDeviceId(item);
-      if (!id) { return; }
+      if (!id || isRaspiDeviceId(id)) { return; }
       mergeDevice(id, { userId: item.userId || item.user_id || null, status: item.status || "known", lat: item.lat != null ? item.lat : item.latitude, lng: item.lng != null ? item.lng : item.longitude, lastSeen: item.lastSeen || item.last_seen || Date.now() });
       colorFor(id);
     });
@@ -92,7 +96,7 @@
 
   function handleLocation(payload) {
     var id = getDeviceId(payload);
-    if (!id) { return; }
+    if (!id || isRaspiDeviceId(id)) { return; }
     var lat = toNum(payload && payload.latitude != null ? payload.latitude : payload && payload.lat);
     var lng = toNum(payload && payload.longitude != null ? payload.longitude : payload && payload.lng);
     var ts = payload && payload.timestamp != null ? payload.timestamp : Date.now();
@@ -108,7 +112,7 @@
 
   function handleDeviceOnline(payload) {
     var id = getDeviceId(payload);
-    if (!id) { return; }
+    if (!id || isRaspiDeviceId(id)) { return; }
     mergeDevice(id, { status: "active", lastSeen: payload && payload.connectedAt || Date.now(), userId: payload && payload.userId || payload && payload.user_id || null });
     colorFor(id);
     renderDevices();
@@ -116,7 +120,7 @@
 
   function handleDeviceOffline(payload) {
     var id = getDeviceId(payload);
-    if (!id) { return; }
+    if (!id || isRaspiDeviceId(id)) { return; }
     mergeDevice(id, { status: "inactive", lastSeen: payload && payload.lastSeen || Date.now() });
     renderDevices();
   }
