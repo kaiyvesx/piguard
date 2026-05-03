@@ -1,0 +1,90 @@
+<div id="sidebarGps">
+  <div class="section-label">Raspberry Pi GPS Status</div>
+  <div class="trip-card">
+    <div class="trip-dest" id="gps-location">Waiting for GPS fix…</div>
+    <div class="trip-sub" id="gps-fix-sub">Connecting to Pi backend</div>
+    <div class="trip-stats">
+      <div class="stat">
+        <div class="stat-value" id="stat-sat">—</div>
+        <div class="stat-label">Satellites</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-alt">—</div>
+        <div class="stat-label">Altitude</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-pts">—</div>
+        <div class="stat-label">Track pts</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="history-launch-wrap">
+    <button type="button" class="presence-history-open-btn" data-history-source="raspi">Open Tracking History</button>
+  </div>
+
+  <div class="section-label">Speed</div>
+  <div class="speed-gauge" style="position:relative">
+    <div class="gauge-circle">
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle class="gauge-bg" cx="36" cy="36" r="27"/>
+        <circle class="gauge-fill" id="gaugeFill" cx="36" cy="36" r="27"/>
+      </svg>
+      <div class="gauge-text">
+        <div id="speedNum">42</div>
+        <span>km/h</span>
+      </div>
+    </div>
+    <div class="speed-info">
+      <div class="speed-label">Speed Limit</div>
+      <div class="speed-limit">60</div>
+      <div class="speed-status" id="speedStatus">Within limit</div>
+    </div>
+  </div>
+
+  <div class="section-label">Traffic Condition</div>
+  <div class="traffic-bar">
+    <div class="traffic-title">Route traffic — mostly light</div>
+    <div class="traffic-segments">
+      <div class="seg" style="flex:2;background:#00e676"></div>
+      <div class="seg" style="flex:1;background:#ffb300"></div>
+      <div class="seg" style="flex:3;background:#00e676"></div>
+      <div class="seg" style="flex:1;background:#ff3d57"></div>
+      <div class="seg" style="flex:2;background:#00e676"></div>
+    </div>
+  </div>
+
+  <div class="section-label">Live Insights</div>
+  <div class="alert-item info">
+    <div class="alert-icon">&#x1F4F6;</div>
+    <div class="alert-body">
+      <div class="alert-title">Signal Quality</div>
+      <div class="alert-desc" id="insight-signal-desc">Waiting for satellite data</div>
+    </div>
+    <div class="alert-time" id="insight-signal-time">--</div>
+  </div>
+  <div class="alert-item">
+    <div class="alert-icon">&#x1F699;</div>
+    <div class="alert-body">
+      <div class="alert-title">Movement State</div>
+      <div class="alert-desc" id="insight-move-desc">Waiting for speed data</div>
+    </div>
+    <div class="alert-time" id="insight-move-time">--</div>
+  </div>
+  <div class="alert-item danger">
+    <div class="alert-icon">&#x1F4F1;</div>
+    <div class="alert-body">
+      <div class="alert-title">Network Status</div>
+      <div class="alert-desc" id="insight-net-desc">Waiting for modem status</div>
+    </div>
+    <div class="alert-time" id="insight-net-time">--</div>
+  </div>
+
+  <div class="section-label">Quick Snapshot</div>
+  <div class="nearby-grid">
+    <div class="nearby-card"><div class="nearby-icon">&#x1F4CD;</div><div class="nearby-name">Fix Source</div><div class="nearby-dist" id="snapshot-source">Waiting</div></div>
+    <div class="nearby-card"><div class="nearby-icon">&#x23F1;</div><div class="nearby-name">Packet Age</div><div class="nearby-dist" id="snapshot-packet">--</div></div>
+    <div class="nearby-card"><div class="nearby-icon">&#x1F4F2;</div><div class="nearby-name">Operator</div><div class="nearby-dist" id="snapshot-operator">Unknown</div></div>
+    <div class="nearby-card"><div class="nearby-icon">&#x1F6F0;</div><div class="nearby-name">Tracker State</div><div class="nearby-dist" id="snapshot-state">Idle</div></div>
+  </div>
+</div>

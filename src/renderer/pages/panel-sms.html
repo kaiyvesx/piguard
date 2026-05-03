@@ -1,0 +1,63 @@
+<!-- SMS Panel -->
+<div class="panel" id="panel-sms">
+  <div class="sms-list">
+    <div class="sms-list-header">
+      <div class="sms-list-title-wrap">
+        <h2>Messages</h2>
+        <span class="badge" id="smsBadge">0</span>
+      </div>
+    </div>
+    <div class="sms-search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+      </svg>
+      <input type="text" placeholder="Search messages..." />
+    </div>
+    <div class="sms-contacts" id="smsContactsList">
+      <div style="padding:12px 14px;color:var(--muted);font-size:.72rem">Loading contacts from backend...</div>
+    </div>
+  </div>
+
+  <div class="sms-thread">
+    <div class="thread-header">
+      <div class="thread-avatar" id="smsThreadAvatar">--</div>
+      <div style="flex:1">
+        <div class="thread-name" id="smsThreadName">No contact selected</div>
+        <div class="thread-sub" id="smsThreadSub">Waiting for Pi contacts...</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-icon" id="smsRenameBtn" type="button" title="Rename contact" style="width:32px;height:32px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 20h9"/>
+            <path d="M16.5 3.5a2.12 2.12 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/>
+          </svg>
+        </button>
+        <div class="btn-icon" style="width:32px;height:32px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.5 9.79a19.79 19.79 0 01-3.07-8.68A2 2 0 012.41 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.39a16 16 0 006 6l.76-.76a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+          </svg>
+        </div>
+        <div class="btn-icon" style="width:32px;height:32px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="messages-area" id="smsMessagesArea">
+      <div class="date-divider">Loading backend SMS log...</div>
+    </div>
+
+    <div class="compose-area">
+      <input class="compose-input" id="smsComposeInput" type="text" placeholder="Type a message..." />
+      <button class="btn-send" id="smsSendBtn" title="Send message">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0a1628" stroke-width="2.5">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+    

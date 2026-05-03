@@ -1,0 +1,60 @@
+<div id="sidebarMobile" style="display:none;">
+  <div class="section-label">Mobile Tracking</div>
+  <div class="trip-card" style="padding:14px;">
+    <div class="trip-dest">Dedicated Mobile Panel</div>
+    <div class="trip-sub">Use the Mobile tab to review all detected phones and live routes from HTTP logs.</div>
+  </div>
+
+  <div class="tracking-sidebar-presence-card" aria-live="polite">
+    <div class="tracking-sidebar-presence-head">Device Presence</div>
+    <div class="tracking-sidebar-presence-grid">
+      <div class="tracking-sidebar-presence-item">
+        <span class="tracking-sidebar-presence-dot online"></span>
+        <span class="tracking-sidebar-presence-label">Online</span>
+        <span class="tracking-sidebar-presence-value" id="mobileSidebarOnlineCount">0</span>
+      </div>
+      <div class="tracking-sidebar-presence-item">
+        <span class="tracking-sidebar-presence-dot offline"></span>
+        <span class="tracking-sidebar-presence-label">Offline</span>
+        <span class="tracking-sidebar-presence-value" id="mobileSidebarOfflineCount">0</span>
+      </div>
+    </div>
+    <div class="tracking-sidebar-presence-total" id="mobileSidebarPresenceSummary">0 devices tracked</div>
+  </div>
+
+    <div class="history-launch-wrap">
+      <button type="button" class="presence-history-open-btn" data-history-source="mobile">Open Tracking History</button>
+    </div>
+
+    <div class="section-label">Discovered Devices</div>
+    <div class="tracking-sidebar-location-card">
+      <div class="tracking-sidebar-location-list" id="mobileSidebarDevicesList">
+        <div class="tracking-sidebar-location-empty">Waiting for mobile devices...</div>
+      </div>
+    </div>
+
+    <div class="section-label">Recent GPS</div>
+    <div class="tracking-sidebar-location-card">
+      <div class="tracking-sidebar-location-list" id="mobileSidebarGpsLogList">
+        <div class="tracking-sidebar-location-empty">No GPS entries yet.</div>
+      </div>
+    </div>
+
+  <div class="section-label">Philippines Time &amp; Weather</div>
+  <div class="weather-strip">
+    <div class="weather-left">
+      <div class="weather-icon" id="mobile-weather-icon">&#x26C5;</div>
+      <div>
+        <div class="weather-val" id="mobile-weather-temp">--°C</div>
+        <div class="weather-desc" id="mobile-weather-desc">Fetching weather...</div>
+      </div>
+    </div>
+    <div class="weather-right">
+      <div class="weather-extra" id="mobile-ph-time">PH Time: --:--:--</div>
+      <div class="weather-extra" id="mobile-ph-date">PH Date: --</div>
+      <div class="weather-extra" id="mobile-weather-humidity">Humidity: --%</div>
+      <div class="weather-extra" id="mobile-weather-wind">Wind: -- km/h</div>
+    </div>
+  </div>
+
+</div>

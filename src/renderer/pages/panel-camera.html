@@ -1,0 +1,41 @@
+<!-- Camera Panel -->
+<div class="panel" id="panel-camera">
+  <div class="camera-toolbar">
+    <h2>Camera Feeds</h2>
+    <div class="cam-toolbar-right">
+      <button type="button" class="cam-chip active" id="cameraModeLiveBtn">Live</button>
+      <button type="button" class="cam-chip" id="cameraModeSnapshotBtn">Snapshot</button>
+      <button type="button" class="cam-chip" id="cameraRefreshBtn">Refresh</button>
+      <div class="camera-connection" id="cameraConnectionLabel">Waiting for backend...</div>
+    </div>
+  </div>
+
+  <div class="camera-inline-indicator" aria-live="polite">
+    <span class="status-dot" aria-hidden="true"></span>
+    <span id="cameraActionIndicator">Tip: click any camera tile to expand or minimize. Right-click or use the settings button for controls.</span>
+  </div>
+
+  <div class="cam-slot-backdrop" id="cameraSlotBackdrop" hidden></div>
+  <div class="cam-slot-menu" id="cameraSlotMenu" role="menu" aria-label="Camera quick actions" hidden>
+    <div class="cam-slot-menu-head">
+      <div id="cameraSlotMenuTarget">Camera controls</div>
+      <button type="button" class="cam-slot-close" id="cameraSlotMenuCloseBtn" aria-label="Close camera actions">&times;</button>
+    </div>
+    <div class="cam-slot-menu-sub">Quick command center for the selected slot.</div>
+    <div class="cam-slot-menu-actions" role="group" aria-label="Camera actions">
+      <button type="button" class="cam-admin-btn danger" id="cameraMenuRecordStartBtn" role="menuitem">Start Recording</button>
+      <button type="button" class="cam-admin-btn" id="cameraMenuRecordStopBtn" role="menuitem">Stop Recording</button>
+      <button type="button" class="cam-admin-btn warning" id="cameraMenuPowerOffBtn" role="menuitem">Turn Camera Off</button>
+      <button type="button" class="cam-admin-btn success" id="cameraMenuPowerOnBtn" role="menuitem">Turn Camera On</button>
+      <button type="button" class="cam-admin-btn" id="cameraMenuCaptureBtn" role="menuitem">Capture Snapshot</button>
+      <button type="button" class="cam-admin-btn" id="cameraMenuIncidentBtn" role="menuitem">Flag Incident</button>
+    </div>
+    <div class="cam-policy-strip" role="group" aria-label="Capture policy toggles">
+      <button type="button" class="cam-policy-chip active" id="cameraMenuAutoRecordChip" role="menuitemcheckbox" aria-checked="true">Auto record motion</button>
+      <button type="button" class="cam-policy-chip" id="cameraMenuAudioMuteChip" role="menuitemcheckbox" aria-checked="false">Mute camera audio</button>
+      <button type="button" class="cam-policy-chip" id="cameraMenuNightVisionChip" role="menuitemcheckbox" aria-checked="false">Night vision priority</button>
+    </div>
+  </div>
+
+  <div class="cam-grid" id="cameraGrid"></div>
+</div>

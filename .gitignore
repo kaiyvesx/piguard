@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build / output
+dist/
+build/
+out/
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local Android SDK/tools
+Android/
+Android/**/*.zip
+Android/**/*.tar
+Android/**/*.tgz
+Android/**/*.7z

@@ -1,0 +1,131 @@
+<!-- GPS / Map Panel -->
+<div class="panel active" id="panel-gps">
+  <div id="map"></div>
+
+  <div class="live-toast" id="liveToast">
+    <div class="status-dot"></div>
+    Live GPS Tracking &nbsp;&middot;&nbsp; Updated just now
+  </div>
+
+  <div class="map-weather-card" id="mapWeatherCard">
+    <div class="map-weather-main">
+      <div class="map-weather-icon" id="gps-weather-icon">&#x26C5;</div>
+      <div>
+        <div class="map-weather-temp" id="gps-weather-temp">--°C</div>
+        <div class="map-weather-desc" id="gps-weather-desc">Fetching weather...</div>
+      </div>
+    </div>
+    <div class="map-weather-meta">
+      <div class="map-weather-extra" id="gps-ph-time">PH Time: --:--:--</div>
+      <div class="map-weather-extra" id="gps-ph-date">PH Date: --</div>
+      <div class="map-weather-extra" id="gps-weather-humidity">Humidity: --%</div>
+      <div class="map-weather-extra" id="gps-weather-wind">Wind: -- km/h</div>
+    </div>
+  </div>
+
+  <div class="map-controls">
+    <div class="map-btn" id="btnCenter" data-no-toggle title="Center on tracker">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <line x1="12" y1="2" x2="12" y2="6"/>
+        <line x1="12" y1="18" x2="12" y2="22"/>
+        <line x1="2" y1="12" x2="6" y2="12"/>
+        <line x1="18" y1="12" x2="22" y2="12"/>
+      </svg>
+    </div>
+    <div class="map-btn" id="btnDeviceInfo" data-no-toggle title="Device info">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="8" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="12" y1="12" x2="12" y2="16"/>
+      </svg>
+    </div>
+  </div>
+
+  <div class="gps-indicator">
+    <div class="dot"></div>
+    <span id="gpsCoords"></span>
+  </div>
+
+  <div class="bottom-bar">
+    <div class="nav-current">
+      <div class="turn-icon">&#x1F4CD;</div>
+      <div class="turn-text">
+        <div class="turn-action" id="live-coord-label">Live coordinates</div>
+        <div class="turn-road" id="live-coord-value" style="font-size:.82rem">Waiting for GPS...</div>
+        <div class="turn-dist" id="live-last-update">-</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="device-panel-float" id="devicePanelFloat" aria-hidden="true">
+    <div class="panel-header">
+      <span class="panel-title">Device</span>
+      <button type="button" class="panel-close" id="devicePanelClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="panel-body">
+      <div class="device-header">
+        <div class="device-name" id="floatDeviceName">RPI-01</div>
+        <div class="device-sub" id="floatDeviceSub">Raspberry Pi GPS Tracker</div>
+        <div class="device-status" id="floatDeviceStatus"><span class="dot"></span><span id="floatDeviceStatusText">Online</span></div>
+      </div>
+      <div class="section-title">Device Information</div>
+      <div class="info-row"><span class="label">Device Type</span><span class="value" id="floatDeviceType">Raspberry Pi 4</span></div>
+      <div class="info-row"><span class="label">Last Update</span><span class="value" id="floatLastUpdate">-</span></div>
+      <div class="info-row"><span class="label">Speed</span><span class="value" id="floatSpeed">-</span></div>
+      <div class="info-row"><span class="label">Coordinates</span><span class="value" id="floatCoords">-</span></div>
+      <div class="section-title connectivity-block">Connectivity Status</div>
+      <div class="info-row"><span class="label">Operator</span><span class="value" id="floatOperator">-</span></div>
+      <div class="info-row"><span class="label">Connection</span><span class="value" id="floatConnection">-</span></div>
+      <div class="info-row"><span class="label">GPS</span><span class="value" id="floatGpsStatus">Disconnected</span></div>
+      <div class="info-row"><span class="label">Modem</span><span class="value" id="floatModem">-</span></div>
+    </div>
+  </div>
+
+  <div class="presence-history-modal" id="presenceHistoryModal" hidden>
+    <div class="presence-history-backdrop" id="presenceHistoryBackdrop"></div>
+    <section class="presence-history-dialog" role="dialog" aria-modal="true" aria-labelledby="presenceHistoryTitle">
+      <header class="presence-history-header">
+        <div class="presence-history-head-copy">
+          <h3 class="presence-history-title" id="presenceHistoryTitle">Tracking History</h3>
+          <div class="presence-history-subtitle" id="presenceHistorySubtitle">RasPi only</div>
+        </div>
+        <div class="presence-history-head-actions">
+          <button type="button" class="presence-history-export-btn" id="presenceHistoryExportBtn">Export CSV</button>
+          <button type="button" class="presence-history-close" id="presenceHistoryCloseBtn" aria-label="Close history">Close</button>
+        </div>
+      </header>
+
+      <div class="presence-history-summary-grid">
+        <div class="presence-history-summary-card" id="presenceHistoryRaspiCard">
+          <div class="presence-history-summary-label">RasPi State</div>
+          <div class="presence-history-summary-value" id="presenceHistoryRaspiState">Offline</div>
+        </div>
+        <div class="presence-history-summary-card" id="presenceHistoryMobileCard">
+          <div class="presence-history-summary-label">Mobile Online</div>
+          <div class="presence-history-summary-value" id="presenceHistoryMobileOnline">0</div>
+        </div>
+        <div class="presence-history-summary-card">
+          <div class="presence-history-summary-label">Tracked Records</div>
+          <div class="presence-history-summary-value" id="presenceHistoryTotalRecords">0</div>
+        </div>
+      </div>
+
+      <div class="presence-history-track-actions">
+        <button type="button" class="presence-history-track-btn" id="historyTrackRaspiBtn">Track RasPi</button>
+        <button type="button" class="presence-history-track-btn" id="historyTrackMobileBtn">Track Mobile Panel</button>
+      </div>
+
+      <div class="presence-history-mobile-block" id="presenceHistoryMobileBlock">
+        <div class="presence-history-mobile-title">Mobile Devices (Individual Track)</div>
+        <div class="presence-history-mobile-list" id="presenceHistoryMobileList">
+          <div class="presence-history-empty">No mobile devices discovered yet.</div>
+        </div>
+      </div>
+
+      <div class="presence-history-log-list" id="presenceHistoryList">
+        <div class="presence-history-empty">No tracking history yet.</div>
+      </div>
+    </section>
+  </div>
+</div>

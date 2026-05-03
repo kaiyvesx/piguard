@@ -1,0 +1,68 @@
+<!-- Header -->
+<header>
+  <div class="logo">
+    <img src="../../piguard-logo.png" alt="PiGuard logo" />
+    Admin
+  </div>
+
+  <div class="header-center">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6b8cae" stroke-width="2">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+    <input type="text" id="searchInput" placeholder="Search destination..." />
+    <button id="searchBtn" title="Search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="header-right">
+    <div class="header-status-group">
+      <div class="status-line">
+        <div class="status-dot" id="piStatusDot"></div>
+        <span id="piConnStatus" style="font-size:.72rem;color:var(--success)">RasPi: Connecting...</span>
+      </div>
+      <div class="status-line">
+        <div class="status-dot" id="gpsStatusDot"></div>
+        <span id="gpsConnStatus" style="font-size:.72rem;color:var(--danger)">GPS: Disconnected</span>
+      </div>
+    </div>
+    <button
+      class="header-activity-btn"
+      id="trackingEventLogToggle"
+      type="button"
+      aria-haspopup="dialog"
+      aria-controls="trackingLogPanel"
+      aria-expanded="false"
+      title="Open tracking activity log"
+    >
+      <span class="header-activity-btn-label">Activity</span>
+      <span class="header-activity-btn-icon" aria-hidden="true">&#128221;</span>
+    </button>
+    <button class="btn-icon" id="themeToggle" title="Switch to light mode" aria-label="Toggle theme"></button>
+    <div class="btn-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+      </svg>
+    </div>
+    <div class="btn-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 10-16 0"/>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<div class="tracking-log-modal" id="trackingLogPanel" hidden>
+  <div class="tracking-log-modal-backdrop" id="trackingLogBackdrop"></div>
+  <section class="tracking-log-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="trackingLogTitle">
+    <header class="tracking-log-modal-header">
+      <h4 class="tracking-log-modal-title" id="trackingLogTitle">Tracking Activity Log</h4>
+      <button class="tracking-log-modal-close" id="trackingLogCloseBtn" type="button" aria-label="Close activity log">Close</button>
+    </header>
+    <div class="tracking-log-body" id="trackingMessageLog">
+      <div class="tracking-log-empty">No tracking activity yet.</div>
+    </div>
+  </section>
+</div>
