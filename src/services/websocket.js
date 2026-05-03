@@ -52,6 +52,7 @@ class AdminWebSocketClient extends EventEmitter {
     this._offlineLoggedDevices = new Set();
     this._lastServerErrorKey = null;
     this._lastServerErrorAt = 0;
+    this._reconnectSuppressed = false;
   }
 
   /**
@@ -70,7 +71,11 @@ class AdminWebSocketClient extends EventEmitter {
 
     if (resetAttempts) {
       this._reconnectAttempts = 0;
+      this._reconnectSuppressed = false;
+    } else if (this._reconnectSuppressed) {
+      throw new Error('Reconnect disabled after max attempts');
     }
+
     this._shouldReconnect = true;
     this._connectionPromise = this._doConnect();
 
@@ -178,12 +183,17 @@ class AdminWebSocketClient extends EventEmitter {
 
     // Handle command queued (device offline)
     if (type === 'command_queued') {
+      console.log('[AdminWS] command_queued from server', msg);
       this._logOfflineDevice(msg.device_id);
       const pending = this._pendingRequests.get(msg.request_id);
       if (pending) {
         clearTimeout(pending.timeout);
         this._pendingRequests.delete(msg.request_id);
-        pending.reject(new Error(`${this._normalizeOfflineDeviceLabel(msg.device_id)} is offline`));
+        pending.resolve({
+          queued: true,
+          message: msg.message || `${this._normalizeOfflineDeviceLabel(msg.device_id)} is offline`,
+          ...msg,
+        });
       }
       this.emit('command_queued', msg);
       return;
@@ -191,6 +201,7 @@ class AdminWebSocketClient extends EventEmitter {
 
     // Handle command response from device
     if (type === 'command_response') {
+      console.log('[AdminWS] command_response from server', msg);
       this._clearOfflineLogForDevice(msg?.device_id);
       const pending = this._pendingRequests.get(msg.request_id);
       if (pending) {
@@ -302,6 +313,8 @@ class AdminWebSocketClient extends EventEmitter {
 
     if (this._reconnectAttempts >= this._maxReconnectAttempts) {
       console.log(`[AdminWS] Max reconnect attempts (${this._maxReconnectAttempts}) reached. Stopping.`);
+      this._reconnectSuppressed = true;
+      this._shouldReconnect = false;
       this.emit('max_reconnect_reached');
       return;
     }
@@ -330,18 +343,22 @@ class AdminWebSocketClient extends EventEmitter {
    * Send a command to a device via the backend server.
    * @param {string} action - Command action (e.g., 'get_gps', 'take_photo')
    * @param {object} payload - Command payload
-  * @param {string} [deviceId] - Target user ID (defaults to config)
+   * @param {string|object|null} target - Target user ID string, or { userId, deviceId }
    * @param {string} [requestId] - Custom request ID (auto-generated if not provided)
    * @returns {Promise<object>} Command response
    */
-  async sendCommand(action, payload = {}, deviceId = null, requestId = null) {
+  async sendCommand(action, payload = {}, target = null, requestId = null) {
     if (!this._ws || !this._authenticated) {
       await this.connect();
     }
 
     const reqId = requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    let userId = deviceId || config.targetDeviceId;
-    if (!deviceId && shouldAutoDetectTarget()) {
+    const targetObj = target && typeof target === 'object' ? target : null;
+    const explicitUserId = targetObj ? targetObj.userId : target;
+    const explicitDeviceId = targetObj ? targetObj.deviceId : null;
+
+    let userId = explicitUserId || config.targetDeviceId;
+    if (!explicitUserId && shouldAutoDetectTarget()) {
       const adbDeviceId = await getPreferredDeviceId();
       if (adbDeviceId) {
         userId = adbDeviceId;
@@ -364,11 +381,14 @@ class AdminWebSocketClient extends EventEmitter {
       const msg = {
         type: 'command_request',
         user_id: userId,
-        device_id: userId,
         action,
         request_id: reqId,
         payload,
       };
+
+      if (String(explicitDeviceId || '').trim()) {
+        msg.device_id = String(explicitDeviceId).trim();
+      }
 
       this._ws.send(JSON.stringify(msg));
     });
@@ -399,6 +419,7 @@ class AdminWebSocketClient extends EventEmitter {
    */
   disconnect() {
     this._shouldReconnect = false;
+    this._reconnectSuppressed = false;
 
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);

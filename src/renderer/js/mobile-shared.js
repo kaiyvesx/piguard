@@ -71,7 +71,8 @@
     if (!ts) {
       return false;
     }
-    return Date.now() - new Date(ts).getTime() < 30000;
+    // Keep presence stable while mobile app is open; backend updates are not always sub-30s.
+    return Date.now() - new Date(ts).getTime() < 300000;
   }
 
   function colorFromIndex(idx) {

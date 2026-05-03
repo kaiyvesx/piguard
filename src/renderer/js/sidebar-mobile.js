@@ -19,6 +19,11 @@
   var isActive = shared.isActive || function () { return false; };
   var colorFromIndex = shared.colorFromIndex || function (idx) { return "hsl(" + ((idx * 47) % 360) + ",72%,54%)"; };
 
+  function isDeviceOnline(device) {
+    var status = String(device && device.status || '').trim().toLowerCase();
+    return status === 'online' || status === 'active' || isActive(device && device.lastSeen);
+  }
+
   function isRaspiDeviceId(deviceId) {
     return String(deviceId || "").trim().toLowerCase().indexOf("raspi") === 0;
   }
@@ -55,7 +60,7 @@
 
   function renderPresence() {
     var online = 0; var offline = 0;
-    deviceMap.forEach(function (device) { if (isActive(device.lastSeen)) { online += 1; } else { offline += 1; } });
+    deviceMap.forEach(function (device) { if (isDeviceOnline(device)) { online += 1; } else { offline += 1; } });
     var onlineEl = getEl("mobileSidebarOnlineCount");
     var offlineEl = getEl("mobileSidebarOfflineCount");
     var summaryEl = getEl("mobileSidebarPresenceSummary");
@@ -76,7 +81,7 @@
     list.innerHTML = rows.map(function (device) {
       var dot = colorFor(device.deviceId);
       var coords = (toNum(device.lat) != null && toNum(device.lng) != null) ? toNum(device.lat).toFixed(5) + ", " + toNum(device.lng).toFixed(5) : "No coordinates";
-      return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div><span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:" + dot + ";\"></span><strong>" + friendlyName(device.deviceId) + "</strong></div><div style=\"opacity:.82;margin-top:2px;\">Status: " + (isActive(device.lastSeen) ? "active" : "inactive") + " | Seen: " + lastSeenText(device.lastSeen) + "</div><div style=\"opacity:.82;\">Coords: " + coords + "</div></div>";
+      return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div><span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:" + dot + ";\"></span><strong>" + friendlyName(device.deviceId) + "</strong></div><div style=\"opacity:.82;margin-top:2px;\">Status: " + (isDeviceOnline(device) ? "active" : "inactive") + " | Seen: " + lastSeenText(device.lastSeen) + "</div><div style=\"opacity:.82;\">Coords: " + coords + "</div></div>";
     }).join("");
     renderPresence();
   }

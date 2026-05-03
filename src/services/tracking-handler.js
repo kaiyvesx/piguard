@@ -12,7 +12,6 @@ const devices = new Map();
 const lastPersistedByDevice = new Map();
 const trackingActiveByDevice = new Map();
 
-const LOCATION_SAVE_INTERVAL_MS = 60000;
 const LOCATION_MOVEMENT_THRESHOLD_METERS = 10; // meters
 
 function _deg2rad(deg) {
@@ -112,11 +111,6 @@ function shouldPersistLocation(deviceId, latitude, longitude) {
   if (!id) return false;
 
   const cached = lastPersistedByDevice.get(id) || { at: 0, lat: null, lng: null };
-  const now = Date.now();
-  const timeSince = now - cached.at;
-
-  // Persist if we've exceeded the periodic interval
-  if (timeSince >= LOCATION_SAVE_INTERVAL_MS) return true;
 
   // Persist if we don't have a prior persisted location
   if (cached.lat == null || cached.lng == null) return true;
@@ -217,6 +211,7 @@ function _onDeviceOnline(msg, client) {
   deviceStore.saveDevice(deviceId, {
     device_id: deviceId,
     status: 'online',
+    user_id: payload.user_id || payload.userId || null,
     first_seen: existing?.first_seen || connectedAt,
     connected_at: connectedAt,
     last_seen: connectedAt,
@@ -266,6 +261,7 @@ function _onLocationUpdate(msg, client) {
   deviceStore.updateDeviceLocation(deviceId, latitude, longitude);
   deviceStore.saveDevice(deviceId, {
     device_id: deviceId,
+    user_id: payload.user_id || payload.userId || null,
     status: 'online',
     first_seen: existing?.first_seen || timestamp,
     connected_at: device.connected_at || timestamp,
@@ -331,22 +327,58 @@ function _onDeviceOffline(msg, client) {
 
 function _onGpsCommandResponse(msg, client) {
   const action = String(msg?.action || '').trim().toLowerCase();
-  if (action !== 'get_gps') return;
-
   const status = String(msg?.status || '').trim().toLowerCase();
-  if (status !== 'success') return;
-
   const deviceId = String(msg?.device_id || '').trim();
   if (!deviceId) return;
 
-  const data = msg && typeof msg.data === 'object' ? msg.data : {};
+  const data = (msg && typeof msg.data === 'object' && msg.data)
+    || (msg && typeof msg.result === 'object' && msg.result)
+    || (msg && typeof msg.payload === 'object' && msg.payload)
+    || {};
+  const requestId = String(msg?.request_id || '').trim();
+  const timestamp = new Date().toISOString();
+
+  // Camera frame response
+  if (action === 'camera_frame' || action === 'take_photo') {
+    const frameBase64 = data.frame_base64
+      || data.frame
+      || data.jpeg_base64
+      || data.image_base64
+      || data.photo_base64
+      || data.image
+      || data.photo
+      || null;
+    if (!frameBase64) {
+      sendToRenderer(client, 'mobile:camera_status', {
+        deviceId,
+        requestId: requestId || null,
+        status: status || 'success',
+        message: status === 'success'
+          ? 'Camera command succeeded but no image payload was provided by device response.'
+          : 'Camera command did not return an image.',
+        timestamp,
+      });
+      return;
+    }
+    console.log('[TrackingHandler] Camera frame received', { deviceId, action, requestId: requestId || null, bytes: String(frameBase64).length });
+    // forward to renderer
+    sendToRenderer(client, 'mobile:camera_frame', {
+      deviceId,
+      frame_base64: String(frameBase64),
+      requestId: requestId || null,
+      timestamp,
+    });
+    return;
+  }
+
+  // GPS command response (backwards compatible)
+  if (action !== 'get_gps') return;
+  if (status !== 'success') return;
+
   const latitude = toNumber(data.lat ?? data.latitude);
   const longitude = toNumber(data.lng ?? data.longitude);
   if (latitude == null || longitude == null) return;
   if (!isValidLocation(latitude, longitude)) return;
-
-  const timestamp = new Date().toISOString();
-  const requestId = String(msg?.request_id || '').trim();
 
   const device = ensureDevice(deviceId);
   if (!device) return;
@@ -368,6 +400,7 @@ function _onGpsCommandResponse(msg, client) {
   deviceStore.updateDeviceLocation(deviceId, latitude, longitude);
   deviceStore.saveDevice(deviceId, {
     device_id: deviceId,
+    user_id: msg?.user_id || msg?.userId || null,
     status: 'online',
     first_seen: existing?.first_seen || timestamp,
     connected_at: device.connected_at || timestamp,
@@ -375,9 +408,6 @@ function _onGpsCommandResponse(msg, client) {
     last_location: device.last_location,
   });
   console.log('[TrackingHandler] Saved GPS to disk:', deviceId, latitude, longitude);
-  // Persist to Supabase only when the device moved beyond the threshold
-  // or the configured interval elapsed. This avoids flooding Supabase
-  // with duplicate manual command responses.
   if (shouldPersistLocation(deviceId, latitude, longitude)) {
     upsertDevice(deviceId, 'online', latitude, longitude)
       .catch((err) => logSupabaseError('upsertDevice', err));
@@ -396,7 +426,6 @@ function _onGpsCommandResponse(msg, client) {
     timestamp,
   });
 
-  // Keep compatibility with the current renderer tracking flow.
   sendToRenderer(client, 'mobile:location', {
     ...toPublicDevice(device),
     payload: {

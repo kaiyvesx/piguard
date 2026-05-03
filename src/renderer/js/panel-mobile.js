@@ -23,6 +23,11 @@
   var isActive = shared.isActive || function () { return false; };
   var colorFromIndex = shared.colorFromIndex || function (idx) { return "hsl(" + ((idx * 47) % 360) + ",72%,54%)"; };
 
+  function isDeviceOnline(device) {
+    var status = String(device && device.status || '').trim().toLowerCase();
+    return status === 'online' || status === 'active' || isActive(device && device.lastSeen);
+  }
+
   function isRaspiDeviceId(deviceId) {
     return String(deviceId || "").trim().toLowerCase().indexOf("raspi") === 0;
   }
@@ -179,21 +184,21 @@
 
     wrap.innerHTML = list.map(function (device) {
       var layer = getOrCreateLayer(device.deviceId);
-      var active = isActive(device.lastSeen);
+      var active = isDeviceOnline(device);
       var coords = (toNum(device.lat) != null && toNum(device.lng) != null) ? toNum(device.lat).toFixed(5) + ", " + toNum(device.lng).toFixed(5) : "No coordinates";
       var isExpanded = expandedDeviceId === device.deviceId;
-      return "<article class=\"tracking-device-card " + (active ? "is-online" : "is-offline") + " " + (selectedDeviceId === device.deviceId ? "is-selected" : "") + "\" data-device-id=\"" + device.deviceId + "\" style=\"border-left-color:" + layer.color + ";\">"
-        + "<div class=\"tracking-device-top\"><div class=\"tracking-device-id\" title=\"" + device.deviceId + "\">" + friendlyName(device.deviceId) + "</div><div class=\"tracking-status-wrap\"><span class=\"tracking-status-dot " + (active ? "online" : "offline") + "\" style=\"background:" + layer.color + ";\"></span><span>" + (active ? "active" : "inactive") + "</span></div></div>"
-        + "<div class=\"tracking-device-meta\">Device: " + device.deviceId + "<br/>Seen: " + lastSeenText(device.lastSeen) + "<br/>Coords: " + coords + "</div>"
-        + "<div class=\"tracking-device-actions\">"
-        + "<button type=\"button\" class=\"tracking-action-btn tracking-action-toggle\" data-action=\"toggle_actions\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;width:100%;\">Actions " + (isExpanded ? "&#9650;" : "&#9660;") + "</button>"
-        + "<div class=\"tracking-device-dropdown\" style=\"margin-top:6px;display:" + (isExpanded ? "grid" : "none") + ";gap:6px;\">"
-        + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_camera\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Camera</button>"
-        + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_sms\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show SMS</button>"
-        + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_logs\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Logs</button>"
-        + "</div>"
-        + "</div>"
-        + "</article>";
+        return "<article class=\"tracking-device-card " + (active ? "is-online" : "is-offline") + " " + (selectedDeviceId === device.deviceId ? "is-selected" : "") + "\" data-device-id=\"" + device.deviceId + "\" style=\"border-left-color:" + layer.color + ";\">"
+          + "<div class=\"tracking-device-top\"><div class=\"tracking-device-id\" title=\"" + device.deviceId + "\">" + friendlyName(device.deviceId) + "</div><div class=\"tracking-status-wrap\"><span class=\"tracking-status-dot " + (active ? "online" : "offline") + "\" style=\"background:" + layer.color + ";\"></span><span>" + (active ? "active" : "inactive") + "</span></div></div>"
+          + "<div class=\"tracking-device-meta\">Device: " + device.deviceId + "<br/>Seen: " + lastSeenText(device.lastSeen) + "<br/>Coords: " + coords + "</div>"
+          + "<div class=\"tracking-device-actions\">"
+          + "<button type=\"button\" class=\"tracking-action-btn tracking-action-toggle\" data-action=\"toggle_actions\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;width:100%;\">Actions " + (isExpanded ? "&#9650;" : "&#9660;") + "</button>"
+          + "<div class=\"tracking-device-dropdown\" style=\"margin-top:6px;display:" + (isExpanded ? "grid" : "none") + ";gap:6px;\">"
+          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_camera\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Camera</button>"
+          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_sms\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show SMS</button>"
+          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_logs\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Logs</button>"
+          + "</div>"
+          + "</div>"
+          + "</article>";
     }).join("");
 
     renderHeader();
@@ -351,9 +356,29 @@
           return;
         }
         if (deviceId && window.electronAPI && typeof window.electronAPI.invoke === "function") {
-          window.electronAPI.invoke("send-command", deviceId, action, {}).catch(function (err) {
-            console.warn("[Panel] Failed to send " + action + ":", err && err.message ? err.message : err);
-          });
+          if (action === 'show_camera') {
+            openCameraModal(deviceId);
+            // backend uses take_photo for camera capture
+            window.electronAPI.invoke("send-command", deviceId, 'take_photo', {}).then(function (result) {
+              var placeholder = document.getElementById('cameraPlaceholder');
+              if (!placeholder) { return; }
+              if (result && result.success && result.data && result.data.queued) {
+                placeholder.textContent = 'Camera request queued by backend. If mobile is currently active, wait a few seconds for the response.';
+              } else {
+                placeholder.textContent = 'Camera command sent. Waiting for image payload...';
+              }
+            }).catch(function (err) {
+              var placeholder = document.getElementById('cameraPlaceholder');
+              if (placeholder) {
+                placeholder.textContent = 'Failed to request camera: ' + (err && err.message ? err.message : err);
+              }
+              console.warn("[Panel] Failed to send " + action + ":", err && err.message ? err.message : err);
+            });
+          } else {
+            window.electronAPI.invoke("send-command", deviceId, action, {}).catch(function (err) {
+              console.warn("[Panel] Failed to send " + action + ":", err && err.message ? err.message : err);
+            });
+          }
         }
         return;
       }
@@ -373,6 +398,160 @@
   loadSupabaseDevices();
   renderCards();
   renderGpsLog();
+
+  /* Camera modal UI */
+  function createCameraModal() {
+    if (document.getElementById('cameraModal')) return;
+    var modal = document.createElement('div');
+    modal.id = 'cameraModal';
+    modal.style.position = 'fixed';
+    modal.style.left = '0';
+    modal.style.top = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.background = 'rgba(0,0,0,0.6)';
+    modal.style.display = 'none';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    modal.style.zIndex = '9999';
+
+    var frame = document.createElement('div');
+    frame.style.width = '90%';
+    frame.style.maxWidth = '1100px';
+    frame.style.background = '#0f1620';
+    frame.style.padding = '14px';
+    frame.style.borderRadius = '10px';
+    frame.style.boxShadow = '0 10px 40px rgba(0,0,0,0.6)';
+    frame.style.display = 'flex';
+    frame.style.flexDirection = 'column';
+    frame.style.gap = '10px';
+
+    var header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+
+    var title = document.createElement('div');
+    title.id = 'cameraModalTitle';
+    title.style.color = '#fff';
+    title.style.fontSize = '16px';
+    title.style.fontWeight = '600';
+    title.textContent = 'Camera';
+
+    var closeWrap = document.createElement('div');
+    var close = document.createElement('button');
+    close.id = 'cameraModalClose';
+    close.textContent = 'Close';
+    close.style.background = '#1f2937';
+    close.style.color = '#fff';
+    close.style.border = 'none';
+    close.style.padding = '6px 10px';
+    close.style.borderRadius = '6px';
+    close.style.cursor = 'pointer';
+    close.addEventListener('click', function () {
+      closeCameraModal();
+    });
+    closeWrap.appendChild(close);
+
+    header.appendChild(title);
+    header.appendChild(closeWrap);
+
+    var imgWrap = document.createElement('div');
+    imgWrap.style.display = 'flex';
+    imgWrap.style.alignItems = 'center';
+    imgWrap.style.justifyContent = 'center';
+    imgWrap.style.background = '#000';
+    imgWrap.style.borderRadius = '6px';
+    imgWrap.style.overflow = 'hidden';
+    imgWrap.style.minHeight = '180px';
+    imgWrap.style.maxHeight = '70vh';
+
+    var img = document.createElement('img');
+    img.id = 'cameraModalImg';
+    img.style.width = '100%';
+    img.style.height = 'auto';
+    img.style.objectFit = 'contain';
+    img.style.display = 'none';
+    img.alt = 'Camera frame';
+
+    var placeholder = document.createElement('div');
+    placeholder.id = 'cameraPlaceholder';
+    placeholder.style.color = '#ccc';
+    placeholder.style.padding = '28px';
+    placeholder.textContent = 'Waiting for camera frame...';
+
+    imgWrap.appendChild(img);
+    imgWrap.appendChild(placeholder);
+
+    var footer = document.createElement('div');
+    footer.style.display = 'flex';
+    footer.style.justifyContent = 'flex-end';
+
+    frame.appendChild(header);
+    frame.appendChild(imgWrap);
+    frame.appendChild(footer);
+    modal.appendChild(frame);
+    document.body.appendChild(modal);
+  }
+
+  function openCameraModal(deviceId) {
+    createCameraModal();
+    var modal = document.getElementById('cameraModal');
+    var title = document.getElementById('cameraModalTitle');
+    var img = document.getElementById('cameraModalImg');
+    var placeholder = document.getElementById('cameraPlaceholder');
+    if (title) title.textContent = 'Camera: ' + deviceId;
+    if (img) {
+      img.src = ''; // clear
+      img.style.display = 'none';
+    }
+    if (placeholder) {
+      placeholder.style.display = 'block';
+    }
+    if (modal) modal.style.display = 'flex';
+    // request latest frame; backend will forward the camera response if available
+  }
+
+  function closeCameraModal() {
+    var modal = document.getElementById('cameraModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  // Listen for camera frames from main process
+  if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+    window.electronAPI.on('mobile:camera_frame', function (_event, data) {
+      try {
+        var deviceId = data && data.deviceId ? String(data.deviceId) : null;
+        var b64 = data && data.frame_base64 ? String(data.frame_base64) : null;
+        if (!b64) return;
+        createCameraModal();
+        var modal = document.getElementById('cameraModal');
+        var title = document.getElementById('cameraModalTitle');
+        var img = document.getElementById('cameraModalImg');
+        var placeholder = document.getElementById('cameraPlaceholder');
+        if (title && deviceId) title.textContent = 'Camera: ' + deviceId;
+        if (img) {
+          img.src = 'data:image/jpeg;base64,' + b64;
+          img.style.display = 'block';
+        }
+        if (placeholder) placeholder.style.display = 'none';
+        if (modal) modal.style.display = 'flex';
+      } catch (e) { console.warn('[Panel] camera_frame handler error', e); }
+    });
+
+    window.electronAPI.on('mobile:camera_status', function (_event, data) {
+      try {
+        createCameraModal();
+        var modal = document.getElementById('cameraModal');
+        var placeholder = document.getElementById('cameraPlaceholder');
+        if (placeholder) {
+          placeholder.style.display = 'block';
+          placeholder.textContent = String(data && data.message || 'Camera command response received without image payload.');
+        }
+        if (modal) modal.style.display = 'flex';
+      } catch (e) { console.warn('[Panel] camera_status handler error', e); }
+    });
+  }
 
   setTimeout(function () { initMap(); }, 1200);
   setInterval(function () { renderCards(); }, 10000);

@@ -10,6 +10,7 @@ try {
 } catch {
   supabase = null;
 }
+const deviceStore = require('./device-store');
 
 let pollInterval = null;
 let pollInFlight = false;
@@ -281,18 +282,11 @@ function getGpsThreshold(deviceId) {
 
 function shouldSaveToSupabase(deviceId, latitude, longitude) {
   const threshold = getGpsThreshold(deviceId);
-  const now = Date.now();
-  const timeSinceLastSave = now - threshold.lastSavedAt;
 
-  // Always save if 60 seconds passed
-  if (timeSinceLastSave >= 60000) {
-    return true;
-  }
-
-  // Check if device moved more than 0.0005 degrees (~50 meters)
-  const MOVEMENT_THRESHOLD = 0.0005;
+  // Save first valid coordinate, then only when location has materially changed.
+  const MOVEMENT_THRESHOLD = 0.00001;
   if (threshold.lastSavedLat == null || threshold.lastSavedLng == null) {
-    return true; // First time
+    return true;
   }
 
   const latDiff = Math.abs(latitude - threshold.lastSavedLat);
@@ -435,6 +429,17 @@ async function processLogs(logs) {
         userId: payload.user_id || null,
         status: 'active',
       });
+      try {
+        deviceStore.saveDevice(deviceId, {
+          device_id: deviceId,
+          user_id: payload.user_id || null,
+          status: 'active',
+          first_seen: seenAt,
+          last_seen: seenAt,
+        });
+      } catch (e) {
+        /* ignore */
+      }
       sendToRenderer('mobile:device_online', {
         deviceId,
         connectedAt: payload.timestamp || seenAt,
@@ -488,6 +493,17 @@ async function processLogs(logs) {
       lastSeen: gpsTs,
       lastSeenLogId: logId,
     });
+    try {
+      deviceStore.saveDevice(deviceId, {
+        device_id: deviceId,
+        user_id: payload.user_id || null,
+        status: 'active',
+        last_seen: gpsTs,
+        last_location: { lat: latitude, lng: longitude, latitude, longitude, timestamp: gpsTs },
+      });
+    } catch (e) {
+      /* ignore */
+    }
 
     sendToRenderer('mobile:location', {
       deviceId,
@@ -543,6 +559,18 @@ async function fetchAndProcessDevices() {
       status,
       lastSeen,
     });
+
+    try {
+      deviceStore.saveDevice(deviceId, {
+        device_id: deviceId,
+        user_id: userId || null,
+        status: status || 'known',
+        last_seen: lastSeen,
+        last_location: coords ? { lat: coords.latitude, lng: coords.longitude, latitude: coords.latitude, longitude: coords.longitude, timestamp: lastSeen } : undefined,
+      });
+    } catch (e) {
+      /* ignore */
+    }
 
     if (!isRaspiDeviceId(deviceId) && supabase && typeof supabase.upsertDevice === 'function') {
       try {
@@ -611,6 +639,36 @@ async function processResponses(responseData) {
 
     const action = String(response.action || '').trim().toLowerCase();
     const status = String(response.status || '').trim().toLowerCase();
+
+    if (action === 'take_photo' && status === 'success') {
+      const frame = payload.frame_base64
+        || payload.frame
+        || payload.jpeg_base64
+        || payload.image_base64
+        || payload.photo_base64
+        || payload.image
+        || payload.photo
+        || null;
+
+      if (frame) {
+        sendToRenderer('mobile:camera_frame', {
+          deviceId,
+          frame_base64: String(frame),
+          requestId: response.request_id || null,
+          timestamp: response.executed_at || response.created_at || nowIso(),
+        });
+      } else {
+        sendToRenderer('mobile:camera_status', {
+          deviceId,
+          requestId: response.request_id || null,
+          status: 'success',
+          message: 'Camera command succeeded, but no image payload was found in admin response.',
+          timestamp: response.executed_at || response.created_at || nowIso(),
+        });
+      }
+      continue;
+    }
+
     if (action !== 'get_gps' || status !== 'success') continue;
 
     const seenAt = response.executed_at || response.created_at || nowIso();
@@ -630,6 +688,18 @@ async function processResponses(responseData) {
       lastSeenLogId: String(response.request_id || ''),
     });
 
+    try {
+      deviceStore.saveDevice(deviceId, {
+        device_id: deviceId,
+        user_id: response.user_id || null,
+        status: 'active',
+        last_seen: seenAt,
+        last_location: { lat: coords.latitude, lng: coords.longitude, latitude: coords.latitude, longitude: coords.longitude, timestamp: seenAt },
+      });
+    } catch (e) {
+      /* ignore */
+    }
+
     sendToRenderer('mobile:location', {
       deviceId,
       userId: response.user_id || null,
@@ -640,6 +710,28 @@ async function processResponses(responseData) {
     });
 
     await saveGpsIfPossible(deviceId, coords.latitude, coords.longitude, response.request_id || null);
+    continue;
+    
+    // NOTE: camera frames may come as responses with action 'camera_frame' and include
+    // frame_base64 or frame in the result/payload. If present, forward to renderer.
+  }
+
+  // Additional pass to forward camera frames if present (some servers send mixed responses)
+  for (let index = 0; index < responses.length; index += 1) {
+    const response = responses[index] || {};
+    const deviceId = extractDeviceId(response.device_id || response.deviceId);
+    if (!deviceId) continue;
+    const action = String(response.action || '').trim().toLowerCase();
+    if (action !== 'camera_frame' && action !== 'take_photo') continue;
+    const result = response.result && typeof response.result === 'object' ? response.result : {};
+    const frame = result.frame_base64 || result.frame || response.frame_base64 || response.frame || null;
+    if (!frame) continue;
+    sendToRenderer('mobile:camera_frame', {
+      deviceId,
+      frame_base64: String(frame),
+      requestId: response.request_id || null,
+      timestamp: response.executed_at || response.created_at || nowIso(),
+    });
   }
 
   emitDevicesList();

@@ -299,10 +299,13 @@ function registerTrackingIPC(adminClient) {
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     try {
+      console.log('[TrackingIPC] send-command', { deviceId: targetDeviceId, userId: targetUserId, action: commandAction, requestId });
       trackingHandler.recordCommandSent(targetDeviceId, commandAction, requestId);
-      const data = await adminClient.sendCommand(commandAction, payload, targetUserId, requestId);
+      const data = await adminClient.sendCommand(commandAction, payload, { userId: targetUserId, deviceId: targetDeviceId }, requestId);
+      console.log('[TrackingIPC] command dispatched', { requestId, action: commandAction });
       return { success: true, data };
     } catch (err) {
+      console.warn('[TrackingIPC] command failed', { deviceId: targetDeviceId, action: commandAction, error: buildSafeError(err) });
       return { success: false, error: buildSafeError(err, 'Failed to send command') };
     }
   });
@@ -323,11 +326,21 @@ function registerTrackingIPC(adminClient) {
 
     try {
       trackingHandler.recordCommandSent(targetDeviceId, 'get_gps', requestId);
-      await adminClient.sendCommand('get_gps', {}, targetUserId, requestId);
+      await adminClient.sendCommand('get_gps', {}, { userId: targetUserId, deviceId: targetDeviceId }, requestId);
       return { ok: true, requestId };
     } catch (err) {
       return { ok: false, error: buildSafeError(err, 'Failed to send get_gps command') };
     }
+  });
+
+  // Test helper: simulate a camera frame being received and forwarded to renderer
+  ipcMain.handle('simulate-camera-frame', async (_event, deviceId) => {
+    const targetDeviceId = String(deviceId || '').trim();
+    if (!targetDeviceId) return { success: false, error: 'deviceId is required' };
+    const samplePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
+    // broadcast to all renderer windows
+    broadcast('mobile:camera_frame', { deviceId: targetDeviceId, frame_base64: samplePngBase64, requestId: 'simulated' });
+    return { success: true };
   });
 
   adminClient.on('command_response', (data) => {

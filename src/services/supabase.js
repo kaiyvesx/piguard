@@ -28,6 +28,28 @@ const supabase = supabaseUrl && supabaseReadWriteKey
 let warnedMissingConfig = false;
 let warnedReadOnlyConfig = false;
 let presenceHistoryUnavailable = false;
+const lastGpsByDevice = new Map();
+
+const GPS_DEDUPE_THRESHOLD_DEGREES = 0.00001;
+
+function shouldInsertGps(deviceId, latitude, longitude) {
+  const id = String(deviceId || '').trim();
+  if (!id) return false;
+  if (latitude == null || longitude == null) return false;
+
+  const previous = lastGpsByDevice.get(id);
+  if (!previous) return true;
+
+  const latDiff = Math.abs(latitude - previous.latitude);
+  const lngDiff = Math.abs(longitude - previous.longitude);
+  return latDiff > GPS_DEDUPE_THRESHOLD_DEGREES || lngDiff > GPS_DEDUPE_THRESHOLD_DEGREES;
+}
+
+function rememberGps(deviceId, latitude, longitude) {
+  const id = String(deviceId || '').trim();
+  if (!id) return;
+  lastGpsByDevice.set(id, { latitude, longitude });
+}
 
 function getClient() {
   if (supabase) return supabase;
@@ -160,10 +182,16 @@ async function saveGpsLog(deviceId, latitude, longitude, requestId) {
   const id = cleanText(deviceId);
   if (!client || !id) return null;
 
+  const lat = cleanNumber(latitude);
+  const lng = cleanNumber(longitude);
+  if (!shouldInsertGps(id, lat, lng)) {
+    return null;
+  }
+
   const payload = {
     device_id: id,
-    latitude: cleanNumber(latitude),
-    longitude: cleanNumber(longitude),
+    latitude: lat,
+    longitude: lng,
     request_id: cleanText(requestId),
     recorded_at: new Date().toISOString(),
   };
@@ -189,6 +217,7 @@ async function saveGpsLog(deviceId, latitude, longitude, requestId) {
   }
 
   if (error) throw error;
+  rememberGps(id, lat, lng);
   return null;
 }
 
