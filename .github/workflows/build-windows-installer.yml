@@ -2,7 +2,7 @@ name: Build Windows Installer
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, add-windows-ci ]
   workflow_dispatch:
 
 jobs:
