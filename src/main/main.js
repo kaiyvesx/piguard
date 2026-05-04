@@ -2,6 +2,8 @@
 require('dotenv').config();
 
 const { app, BrowserWindow, session, nativeImage } = require('electron');
+const { spawn } = require('child_process');
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { setupEventForwarding } = require('./ipc-handlers');
@@ -89,6 +91,72 @@ function createWindow() {
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 }
 
+// Bundled backend process management
+let backendProc = null;
+function startBundledBackend() {
+  try {
+    const isPackaged = app.isPackaged === true;
+    const exeName = process.platform === 'win32' ? 'piguard-backend.exe' : 'piguard-backend';
+
+    // When packaged, resources are located in process.resourcesPath
+    let exePath = path.join(process.resourcesPath || '', 'backend', exeName);
+
+    // During development, allow a local build copy under project build/resources/backend
+    if (!fs.existsSync(exePath)) {
+      exePath = path.join(app.getAppPath(), '..', '..', 'build', 'resources', 'backend', exeName);
+    }
+
+    if (!fs.existsSync(exePath)) {
+      console.log('[Main] No bundled backend executable found at', exePath);
+      return;
+    }
+
+    console.log('[Main] Starting bundled backend:', exePath);
+    backendProc = spawn(exePath, [], { stdio: 'ignore', detached: false });
+    backendProc.unref && backendProc.unref();
+
+    backendProc.on('error', (err) => {
+      console.warn('[Main] Backend process error:', err && err.message ? err.message : err);
+    });
+    backendProc.on('exit', (code, signal) => {
+      console.log('[Main] Backend exited', { code, signal });
+      backendProc = null;
+    });
+  } catch (e) {
+    console.warn('[Main] Failed to start bundled backend:', e && e.message ? e.message : e);
+  }
+}
+
+function startDevBackend() {
+  try {
+    // Spawn local Python Uvicorn server for development testing
+    const pythonBin = process.env.PYTHON_BIN || 'python';
+    const backendDir = path.join(__dirname, '..', '..', 'tracker_backend', 'backend');
+    if (!fs.existsSync(backendDir)) {
+      console.log('[Main] Dev backend directory not found:', backendDir);
+      return;
+    }
+
+    console.log('[Main] Starting dev backend with Python in', backendDir);
+    backendProc = spawn(pythonBin, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'], {
+      cwd: backendDir,
+      stdio: 'inherit',
+      env: Object.assign({}, process.env),
+    });
+
+    backendProc.on('error', (err) => {
+      console.warn('[Main] Dev backend error:', err && err.message ? err.message : err);
+      backendProc = null;
+    });
+    backendProc.on('exit', (code, signal) => {
+      console.log('[Main] Dev backend exited', { code, signal });
+      backendProc = null;
+    });
+  } catch (e) {
+    console.warn('[Main] Failed to start dev backend:', e && e.message ? e.message : e);
+  }
+}
+
 adminClient.on('connected', () => {
   console.log('[Main] Admin WS ready, starting log poller');
   logPoller.startPolling(15000);
@@ -98,6 +166,12 @@ app.whenReady().then(() => {
   deviceStore.markAllOfflineOnStartup();
   const saved = deviceStore.getAllDevices();
   console.log('[Main] Loaded', saved.length, 'saved devices from disk');
+
+  // Try starting a bundled backend executable first; if not present and we're in dev, spawn local Python server for end-to-end testing
+  startBundledBackend();
+  if (!backendProc && !app.isPackaged) {
+    startDevBackend();
+  }
 
   createWindow();
   registerTrackingIPC(adminClient);
@@ -113,6 +187,13 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   logPoller.stopPolling();
+  try {
+    if (backendProc && !backendProc.killed) {
+      backendProc.kill();
+    }
+  } catch (e) {
+    console.warn('[Main] Error while killing backend process:', e && e.message ? e.message : e);
+  }
 });
 
 app.on('window-all-closed', () => {
