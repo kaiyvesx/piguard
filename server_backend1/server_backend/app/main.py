@@ -6,12 +6,14 @@ from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .auth_tokens import validate_admin_token, validate_mobile_token
 from .http_auth import require_admin_auth, require_mobile_auth
 from .hub import RealtimeHub, new_request_id
 from .models import AdminCommandCreate, CommandResponseIn, DeviceLogIn
+from .socket_recording import mount_recording_socket_app, recording_router
 from .sqlite_log import audit_log_from_env
 from .store import now_ms, store
 from .supabase_tracking import tracking_store_from_env
@@ -23,6 +25,8 @@ hub = RealtimeHub(audit, store)
 tracking_store = tracking_store_from_env()
 
 app = FastAPI(title="Remote Device Backend", version="1.1.0")
+
+app.mount("/recordings", StaticFiles(directory=os.getenv("RECORDING_UPLOAD_DIR", "uploads")), name="recordings")
 
 app.add_middleware(
     CORSMiddleware,
@@ -444,6 +448,10 @@ async def http_exception_handler(_request, exc: HTTPException):
         media_type="application/json",
         status_code=exc.status_code,
     )
+
+
+app.include_router(recording_router)
+app = mount_recording_socket_app(app)
 
 
 if __name__ == "__main__":

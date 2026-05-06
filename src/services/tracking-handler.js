@@ -103,7 +103,10 @@ function extractDeviceId(msg) {
   const direct = String(msg?.device_id || '').trim();
   if (direct) return direct;
   const payload = msg && typeof msg.payload === 'object' ? msg.payload : {};
-  return String(payload.device_id || '').trim();
+  const payloadId = String(payload.device_id || '').trim();
+  if (payloadId) return payloadId;
+  const userId = String(msg?.user_id || msg?.userId || payload.user_id || payload.userId || '').trim();
+  return userId;
 }
 
 function shouldPersistLocation(deviceId, latitude, longitude) {
@@ -145,7 +148,7 @@ function recordCommandSent(deviceId, action, requestId) {
 }
 
 function recordCommandResponse(msg) {
-  const id = String(msg?.device_id || '').trim();
+  const id = extractDeviceId(msg);
   const action = String(msg?.action || '').trim().toLowerCase();
   if (!id || !action) return;
 
@@ -328,7 +331,7 @@ function _onDeviceOffline(msg, client) {
 function _onGpsCommandResponse(msg, client) {
   const action = String(msg?.action || '').trim().toLowerCase();
   const status = String(msg?.status || '').trim().toLowerCase();
-  const deviceId = String(msg?.device_id || '').trim();
+  const deviceId = extractDeviceId(msg);
   if (!deviceId) return;
 
   const data = (msg && typeof msg.data === 'object' && msg.data)
@@ -495,7 +498,7 @@ function handleCommandResponse(msg, client) {
   recordCommandResponse(msg);
   const action = String(msg?.action || '').trim().toLowerCase();
   const status = String(msg?.status || '').trim().toLowerCase();
-  const deviceId = String(msg?.device_id || '').trim();
+  const deviceId = extractDeviceId(msg);
   if (deviceId) {
     if (action === 'tracking_approved' && status === 'success') {
       setTrackingActive(deviceId, true);

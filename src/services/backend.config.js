@@ -1,5 +1,8 @@
 'use strict';
 
+const dotenv = require('dotenv');
+dotenv.config();
+
 /**
  * Backend server configuration.
  *
@@ -12,7 +15,11 @@ const BACKEND_HTTP_URL = process.env.BACKEND_HTTP_URL || 'http://10.10.218.105:8
 const BACKEND_WS_URL = process.env.BACKEND_WS_URL || 'ws://10.10.218.105:8000';
 
 // Admin bearer token - must match ADMIN_BEARER_TOKEN in server's .env
-const ADMIN_BEARER_TOKEN = process.env.ADMIN_BEARER_TOKEN || 'C9EQlRRiBTWUCltF6yGBKIT0NXuW3OgZ';
+const DEFAULT_ADMIN_BEARER_TOKEN = 'C9EQlRRiBTWUCltF6yGBKIT0NXuW3OgZ';
+const RAW_ADMIN_BEARER_TOKEN = String(process.env.ADMIN_BEARER_TOKEN || '').trim();
+const ADMIN_BEARER_TOKEN = RAW_ADMIN_BEARER_TOKEN
+  ? RAW_ADMIN_BEARER_TOKEN.replace(/^bearer\s+/i, '').trim()
+  : DEFAULT_ADMIN_BEARER_TOKEN;
 
 // Target device ID - leave empty unless a specific device target is needed
 const TARGET_DEVICE_ID = process.env.TARGET_DEVICE_ID || '';

@@ -291,10 +291,7 @@ function registerTrackingIPC(adminClient) {
     }
 
     const deviceRecord = deviceStore.getDevice(targetDeviceId) || null;
-    const targetUserId = String(deviceRecord?.user_id || deviceRecord?.userId || '').trim();
-    if (!targetUserId) {
-      return { success: false, error: `user_id is required for ${targetDeviceId}` };
-    }
+    const targetUserId = String(deviceRecord?.user_id || deviceRecord?.userId || targetDeviceId || '').trim();
 
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -317,10 +314,7 @@ function registerTrackingIPC(adminClient) {
     }
 
     const deviceRecord = deviceStore.getDevice(targetDeviceId) || null;
-    const targetUserId = String(deviceRecord?.user_id || deviceRecord?.userId || '').trim();
-    if (!targetUserId) {
-      return { ok: false, error: `user_id is required for ${targetDeviceId}` };
-    }
+    const targetUserId = String(deviceRecord?.user_id || deviceRecord?.userId || targetDeviceId || '').trim();
 
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 

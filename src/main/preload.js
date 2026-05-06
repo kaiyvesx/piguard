@@ -6,10 +6,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 // =====================================================
 
 const DEFAULT_RASPI_HTTP_URL = process.env.RASPI_HTTP_URL || 'http://10.10.218.109:8000';
+const ALLOW_LOCAL_PI = String(process.env.ALLOW_LOCAL_PI || '').trim().toLowerCase() === 'true';
 
 const BASE_CANDIDATES = [
   DEFAULT_RASPI_HTTP_URL,
-  'http://localhost:8000',
+  ...(ALLOW_LOCAL_PI ? ['http://localhost:8000'] : []),
 ]
   .map((url) => String(url || '').trim().replace(/\/+$/, ''))
   .filter(Boolean)
@@ -172,6 +173,7 @@ contextBridge.exposeInMainWorld('backendBridge', {
   disconnect: () => ipcRenderer.invoke('backend:disconnect'),
   getStatus: () => ipcRenderer.invoke('backend:status'),
   isConnected: () => ipcRenderer.invoke('backend:isConnected'),
+  getHttpBaseUrl: () => ipcRenderer.invoke('backend:getHttpBaseUrl'),
 
   // =====================
   // GPS Commands

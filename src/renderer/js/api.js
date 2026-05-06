@@ -124,22 +124,30 @@
     },
 
     getStatus: async () => {
-      // Raspi status (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getStatus();
+      }
       return piApi ? piApi.getStatus() : Promise.reject(new Error('Pi API not available'));
     },
 
     getGpsLatest: async () => {
-      // Raspi GPS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getGps();
+      }
       return piApi ? piApi.getGpsLatest() : Promise.reject(new Error('Pi API not available'));
     },
 
     getGpsTrack: async () => {
-      // Raspi GPS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getGpsTrack();
+      }
       return piApi ? piApi.getGpsTrack() : Promise.reject(new Error('Pi API not available'));
     },
 
     getCameras: async () => {
-      // Raspi cameras (109) are independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getCameras();
+      }
       return piApi ? piApi.getCameras() : Promise.reject(new Error('Pi API not available'));
     },
 
@@ -151,17 +159,23 @@
     },
 
     getContacts: async () => {
-      // Raspi contacts (109) are independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getContacts();
+      }
       return piApi ? piApi.getContacts() : Promise.reject(new Error('Pi API not available'));
     },
 
     getMessages: async () => {
-      // Raspi messages/SMS (109) are independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getMessages();
+      }
       return piApi ? piApi.getMessages() : Promise.reject(new Error('Pi API not available'));
     },
 
     sendSms: async (numbers, message) => {
-      // Raspi SMS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.sendSms(numbers, message);
+      }
       return piApi ? piApi.sendSms(numbers, message) : Promise.reject(new Error('Pi API not available'));
     },
 
