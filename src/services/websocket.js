@@ -55,6 +55,11 @@ class AdminWebSocketClient extends EventEmitter {
     this._reconnectSuppressed = false;
   }
 
+  _getAdminToken() {
+    const token = String(config.adminToken || '').trim();
+    return token || null;
+  }
+
   /**
    * Connect to the backend WebSocket server.
    * @param {boolean} resetAttempts - Reset reconnect attempts counter (default: true for manual connects)
@@ -97,7 +102,14 @@ class AdminWebSocketClient extends EventEmitter {
 
       console.log('[AdminWS] Connecting to', config.adminWsUrl);
 
-      this._ws = new WebSocket(config.adminWsUrl);
+      const token = this._getAdminToken();
+      if (!token) {
+        console.warn('[AdminWS] Missing admin token; connection will likely be rejected.');
+      }
+
+      this._ws = new WebSocket(config.adminWsUrl, token
+        ? { headers: { Authorization: `Bearer ${token}` } }
+        : undefined);
 
       this._ws.on('open', () => {
         console.log('[AdminWS] Connected, sending hello');
@@ -122,6 +134,9 @@ class AdminWebSocketClient extends EventEmitter {
         clearTimeout(timeout);
 
         if (!this._authenticated) {
+          if (code === 4401 || code === 1008 || String(reason || '').toLowerCase().includes('auth')) {
+            console.error('[AdminWS] Auth rejected. Verify ADMIN_BEARER_TOKEN matches the server .env and restart both sides.');
+          }
           reject(new Error(`Connection closed: ${code}`));
         }
 
@@ -141,11 +156,23 @@ class AdminWebSocketClient extends EventEmitter {
   _sendHello() {
     if (!this._ws) return;
 
-    this._ws.send(JSON.stringify({
+    const token = this._getAdminToken();
+
+    if (!token) {
+      console.warn('[AdminWS] Skipping auth token in hello; token is empty.');
+    }
+
+    const hello = {
       type: 'hello',
       role: 'admin',
-      token: config.adminToken,
-    }));
+    };
+
+    if (token) {
+      hello.token = token;
+      hello.bearer = token;
+    }
+
+    this._ws.send(JSON.stringify(hello));
   }
 
   _handleMessage(msg, connectResolve, connectReject, connectTimeout) {
@@ -357,7 +384,7 @@ class AdminWebSocketClient extends EventEmitter {
     const explicitUserId = targetObj ? targetObj.userId : target;
     const explicitDeviceId = targetObj ? targetObj.deviceId : null;
 
-    let userId = explicitUserId || config.targetDeviceId;
+    let userId = explicitUserId || explicitDeviceId || config.targetDeviceId;
     if (!explicitUserId && shouldAutoDetectTarget()) {
       const adbDeviceId = await getPreferredDeviceId();
       if (adbDeviceId) {
@@ -367,7 +394,7 @@ class AdminWebSocketClient extends EventEmitter {
     }
 
     if (!String(userId || '').trim()) {
-      throw new Error('user_id is required');
+      throw new Error('user_id or device_id is required');
     }
 
     return new Promise((resolve, reject) => {

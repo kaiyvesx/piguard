@@ -124,22 +124,30 @@
     },
 
     getStatus: async () => {
-      // Raspi status (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getStatus();
+      }
       return piApi ? piApi.getStatus() : Promise.reject(new Error('Pi API not available'));
     },
 
     getGpsLatest: async () => {
-      // Raspi GPS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getGps();
+      }
       return piApi ? piApi.getGpsLatest() : Promise.reject(new Error('Pi API not available'));
     },
 
     getGpsTrack: async () => {
-      // Raspi GPS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getGpsTrack();
+      }
       return piApi ? piApi.getGpsTrack() : Promise.reject(new Error('Pi API not available'));
     },
 
     getCameras: async () => {
-      // Raspi cameras (109) are independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getCameras();
+      }
       return piApi ? piApi.getCameras() : Promise.reject(new Error('Pi API not available'));
     },
 
@@ -151,17 +159,23 @@
     },
 
     getContacts: async () => {
-      // Raspi contacts (109) are independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getContacts();
+      }
       return piApi ? piApi.getContacts() : Promise.reject(new Error('Pi API not available'));
     },
 
     getMessages: async () => {
-      // Raspi messages/SMS (109) are independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.getMessages();
+      }
       return piApi ? piApi.getMessages() : Promise.reject(new Error('Pi API not available'));
     },
 
     sendSms: async (numbers, message) => {
-      // Raspi SMS (109) is independent; use Pi bridge directly without fallback to backend (105)
+      if (backendApi && backendConnected && useBackend) {
+        return backendApi.sendSms(numbers, message);
+      }
       return piApi ? piApi.sendSms(numbers, message) : Promise.reject(new Error('Pi API not available'));
     },
 
@@ -274,6 +288,9 @@
   const presenceHistoryTotalRecordsEl = document.getElementById('presenceHistoryTotalRecords');
   const historyTrackRaspiBtnEl = document.getElementById('historyTrackRaspiBtn');
   const historyTrackMobileBtnEl = document.getElementById('historyTrackMobileBtn');
+  const gpsPanelLoaderEl = document.querySelector('[data-panel-loader="gps"]');
+  const mobilePanelLoaderEl = document.querySelector('[data-panel-loader="mobile"]');
+  const smsPanelLoaderEl = document.querySelector('[data-panel-loader="sms"]');
 
   let selectedNumber = null;
   let lastBase = null;
@@ -334,6 +351,18 @@
   const presenceHistoryEntries = [];
   const presenceStateByKey = new Map();
   const presenceLastLocationLoggedAt = new Map();
+  const panelLoadState = { gps: false, mobile: false, sms: false };
+
+  function markPanelLoaded(panelKey) {
+    if (!panelKey || panelLoadState[panelKey]) return;
+    panelLoadState[panelKey] = true;
+    const loader = panelKey === 'gps'
+      ? gpsPanelLoaderEl
+      : (panelKey === 'mobile' ? mobilePanelLoaderEl : smsPanelLoaderEl);
+    if (loader) {
+      loader.classList.remove('is-visible');
+    }
+  }
 
   if (presenceHistoryModalEl && presenceHistoryModalEl.parentElement !== document.body) {
     document.body.appendChild(presenceHistoryModalEl);
@@ -1759,6 +1788,7 @@
     renderTrackingSummary();
     renderTrackingCards();
     refreshTrackingVisuals();
+    markPanelLoaded('mobile');
   }
 
   function applyDeviceLifecycle(action, deviceId, payload = {}) {
@@ -1968,10 +1998,16 @@
     renderTrackingCards();
     renderTrackingMessageLog();
     refreshTrackingVisuals();
+    markPanelLoaded('mobile');
 
   }
 
   initializeTrackingPanelUi();
+  setTimeout(() => {
+    markPanelLoaded('gps');
+    markPanelLoaded('mobile');
+    markPanelLoaded('sms');
+  }, 4500);
 
   // --- reverse geocoding (Nominatim, cached) ---
   const _geocodeCache = new Map();
@@ -2329,6 +2365,7 @@
 
   function renderContacts() {
     if (!contactsWrap || !Array.isArray(contacts)) return;
+    markPanelLoaded('sms');
 
     const visibleContacts = getVisibleContacts();
 
@@ -2430,6 +2467,7 @@
 
   function renderMessages(messagesData) {
     if (!messagesWrap) return;
+    markPanelLoaded('sms');
 
     const backendSms = getAllBackendThreadMessages(messagesData);
     const allSms = [...backendSms, ...localOutgoingSms].sort((a, b) => {
@@ -3587,6 +3625,7 @@
   }
 
   function updateGpsFromBackend(gps, track) {
+    markPanelLoaded('gps');
     // --- determine best position ---
     let lat = null, lon = null, speed = 0;
     const points = track && Array.isArray(track.points) ? track.points : [];

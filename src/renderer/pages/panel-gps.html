@@ -1,5 +1,17 @@
 <!-- GPS / Map Panel -->
 <div class="panel active" id="panel-gps">
+  <div class="panel-skeleton-overlay panel-skeleton-gps is-visible" data-panel-loader="gps" aria-hidden="true">
+    <div class="panel-skeleton-card">
+      <div class="panel-skeleton-line w-36"></div>
+      <div class="panel-skeleton-line w-62"></div>
+      <div class="panel-skeleton-line w-48"></div>
+    </div>
+    <div class="panel-skeleton-map"></div>
+    <div class="panel-skeleton-bar">
+      <div class="panel-skeleton-line w-44"></div>
+      <div class="panel-skeleton-line w-70"></div>
+    </div>
+  </div>
   <div id="map"></div>
 
   <div class="live-toast" id="liveToast">

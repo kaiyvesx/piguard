@@ -2,6 +2,7 @@
 
 const { ipcMain } = require('electron');
 const { backendApi } = require('../services/api');
+const backendConfig = require('../services/backend.config');
 const { listAdbDevices, getPreferredDeviceId } = require('../services/adb');
 
 // Track initialization state
@@ -36,6 +37,10 @@ function initializeIpcHandlers() {
 
   ipcMain.handle('backend:status', () => {
     return backendApi.getStatus();
+  });
+
+  ipcMain.handle('backend:getHttpBaseUrl', () => {
+    return backendConfig.httpBaseUrl || '';
   });
 
   ipcMain.handle('backend:isConnected', () => {
