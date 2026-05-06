@@ -403,7 +403,7 @@
     modal.style.top = '0';
     modal.style.width = '100%';
     modal.style.height = '100%';
-    modal.style.background = 'rgba(0,0,0,0.6)';
+    modal.style.background = 'rgba(3, 8, 18, 0.72)';
     modal.style.display = 'none';
     modal.style.alignItems = 'center';
     modal.style.justifyContent = 'center';
@@ -419,26 +419,60 @@
         + '100% { background-position: 0% 0%; }'
         + '}'
         + '@keyframes cameraPulse {'
-        + '0%, 100% { transform: scale(1); opacity: 0.7; }'
+        + '0%, 100% { transform: scale(1); opacity: 0.72; }'
         + '50% { transform: scale(1.2); opacity: 1; }'
         + '}'
-        + '.camera-modal-frame { width: 94%; max-width: 980px; max-height: 92vh; overflow: auto; }'
-        + '.camera-modal-frame .cam-cell { min-height: 50px; }'
+        + '@keyframes cameraLiveDot {'
+        + '0%, 100% { box-shadow: 0 0 0 0 rgba(255, 78, 104, 0.5); opacity: 1; }'
+        + '50% { box-shadow: 0 0 0 8px rgba(255, 78, 104, 0); opacity: 0.78; }'
+        + '}'
+        + '@keyframes cameraOfflinePulse {'
+        + '0%, 100% { box-shadow: inset 0 0 0 1px rgba(0, 170, 255, 0.22), 0 0 0 rgba(0,170,255,0); }'
+        + '50% { box-shadow: inset 0 0 0 1px rgba(0, 170, 255, 0.5), 0 0 26px rgba(0,170,255,0.18); }'
+        + '}'
+        + '@keyframes cameraEllipsis {'
+        + '0% { content: ""; }'
+        + '33% { content: "."; }'
+        + '66% { content: ".."; }'
+        + '100% { content: "..."; }'
+        + '}'
+        + '.camera-modal-frame { width: 92%; max-width: 940px; max-height: 90vh; overflow: hidden; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }'
+        + '.camera-modal-frame .cam-cell { min-height: 50px; border-radius: 14px; overflow: hidden; }'
+        + '#cameraModal .camera-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }'
+        + '#cameraModal .camera-media-block { display: grid; gap: 8px; min-width: 0; }'
+        + '#cameraModal .camera-media-block .cam-cell { aspect-ratio: 16 / 8; min-height: 96px; max-height: 210px; }'
+        + '#cameraModal .cam-cell.is-offline { animation: cameraOfflinePulse 2.3s ease-in-out infinite; }'
+        + '#cameraModal .cam-dot { background: #ff4e68; animation: cameraLiveDot 1.6s ease-in-out infinite; }'
+        + '#cameraModal .cam-status.offline { background: rgba(255, 78, 104, 0.14); color: #ffd7de; border: 1px solid rgba(255, 78, 104, 0.35); border-radius: 999px; padding: 2px 9px; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; font-weight: 700; }'
+        + '#cameraModal .camera-section-label { position: relative; color: #7ad7ff; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; padding-left: 10px; }'
+        + '#cameraModal .camera-section-label::before { content: ""; position: absolute; left: 0; top: 2px; bottom: 2px; width: 2px; border-radius: 2px; background: linear-gradient(180deg, #00aaff, #79e8ff); }'
+        + '#cameraModal #cameraFacingSelect, #cameraModal #cameraDurationSeconds { transition: border-color .2s ease, box-shadow .2s ease; }'
+        + '#cameraModal #cameraFacingSelect:focus, #cameraModal #cameraDurationSeconds:focus { outline: none; border-color: rgba(0, 170, 255, 0.9); box-shadow: 0 0 0 3px rgba(0, 170, 255, 0.2); }'
+        + '#cameraModal .camera-status-text { color: var(--muted); font-style: italic; }'
+        + '#cameraModal .camera-status-text::after { content: ""; display: inline-block; width: 12px; text-align: left; animation: cameraEllipsis 1.3s steps(1, end) infinite; }'
+        + '#cameraModal #cameraModalClose { width: 30px; height: 30px; border-radius: 9px; line-height: 1; padding: 0; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; }'
+        + '#cameraModal #cameraModalClose:hover { border-color: rgba(0,170,255,0.75); box-shadow: 0 0 0 2px rgba(0,170,255,0.18); }'
+        + '#cameraModal #cameraModalSend, #cameraModal #cameraModalCapture { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; font-weight: 700; border: 1px solid rgba(122, 232, 255, 0.35); background: linear-gradient(120deg, #0077ff, #00aaff 62%, #72f1ff); color: #031a2f; box-shadow: 0 10px 26px rgba(0, 153, 255, 0.28); }'
+        + '#cameraModal #cameraModalSend:hover, #cameraModal #cameraModalCapture:hover { transform: translateY(-1px); filter: brightness(1.05); }'
+        + '#cameraModal #cameraModalCapturedStatus, #cameraModal #cameraModalRecordedStatus { box-shadow: inset 0 0 0 1px rgba(0, 170, 255, 0.08), 0 8px 18px rgba(0, 0, 0, 0.25); }'
         + '@media (max-width: 900px) {'
-        + '.camera-modal-frame { width: 96%; padding: 12px; max-height: 94vh; }'
+        + '.camera-modal-frame { width: 94%; padding: 12px; max-height: 90vh; overflow: auto; }'
+        + '#cameraModal .camera-media-grid { grid-template-columns: 1fr; }'
         + '.camera-modal-frame .cam-cell { min-height: 50px; }'
         + '}';
+      styleEl.textContent += '@media (max-height: 820px) { .camera-modal-frame { max-height: 90vh; overflow: auto; } }';
       document.head.appendChild(styleEl);
     }
 
     var frame = document.createElement('div');
     frame.className = 'camera-modal-frame';
-    frame.style.width = '94%';
-    frame.style.maxWidth = '980px';
-    frame.style.maxHeight = '92vh';
-    frame.style.overflow = 'auto';
-    frame.style.background = '#0f1620';
-    frame.style.padding = '14px';
+    frame.style.width = '88%';
+    frame.style.maxWidth = '780px';
+    frame.style.maxHeight = '86vh';
+    frame.style.overflow = 'hidden';
+    frame.style.background = 'linear-gradient(180deg, var(--card-bg), var(--surface-1))';
+    frame.style.border = '1px solid var(--card-border)';
+    frame.style.padding = '12px';
     frame.style.borderRadius = '10px';
     frame.style.boxShadow = '0 10px 40px rgba(0,0,0,0.6)';
     frame.style.display = 'flex';
@@ -452,7 +486,7 @@
 
     var title = document.createElement('div');
     title.id = 'cameraModalTitle';
-    title.style.color = '#fff';
+    title.style.color = 'var(--text)';
     title.style.fontSize = '16px';
     title.style.fontWeight = '600';
     title.textContent = 'Camera';
@@ -460,10 +494,11 @@
     var closeWrap = document.createElement('div');
     var close = document.createElement('button');
     close.id = 'cameraModalClose';
-    close.textContent = 'Close';
-    close.style.background = '#1f2937';
-    close.style.color = '#fff';
-    close.style.border = 'none';
+    close.textContent = '\u00D7';
+    close.setAttribute('aria-label', 'Close');
+    close.style.background = 'var(--surface-2)';
+    close.style.color = 'var(--text)';
+    close.style.border = '1px solid var(--card-border)';
     close.style.padding = '6px 10px';
     close.style.borderRadius = '6px';
     close.style.cursor = 'pointer';
@@ -477,21 +512,21 @@
 
     var settings = document.createElement('div');
     settings.style.display = 'grid';
-    settings.style.gridTemplateColumns = 'repeat(auto-fit, minmax(160px, 1fr))';
-    settings.style.gap = '10px';
+    settings.style.gridTemplateColumns = 'repeat(auto-fit, minmax(140px, 1fr))';
+    settings.style.gap = '8px';
 
     var facingWrap = document.createElement('label');
     facingWrap.style.display = 'grid';
     facingWrap.style.gap = '6px';
-    facingWrap.style.color = '#cbd5f5';
+    facingWrap.style.color = 'var(--muted)';
     facingWrap.style.fontSize = '12px';
     facingWrap.textContent = 'Camera Facing';
 
     var facingSelect = document.createElement('select');
     facingSelect.id = 'cameraFacingSelect';
-    facingSelect.style.background = '#0b1220';
-    facingSelect.style.border = '1px solid #334155';
-    facingSelect.style.color = '#e2e8f0';
+    facingSelect.style.background = 'var(--surface-1)';
+    facingSelect.style.border = '1px solid var(--card-border)';
+    facingSelect.style.color = 'var(--text)';
     facingSelect.style.borderRadius = '8px';
     facingSelect.style.padding = '8px';
     var facingFront = document.createElement('option');
@@ -507,7 +542,7 @@
     var durationWrap = document.createElement('label');
     durationWrap.style.display = 'grid';
     durationWrap.style.gap = '6px';
-    durationWrap.style.color = '#cbd5f5';
+    durationWrap.style.color = 'var(--muted)';
     durationWrap.style.fontSize = '12px';
     durationWrap.textContent = 'Duration (seconds)';
 
@@ -518,9 +553,9 @@
     durationInput.max = '60';
     durationInput.step = '1';
     durationInput.value = '15';
-    durationInput.style.background = '#0b1220';
-    durationInput.style.border = '1px solid #334155';
-    durationInput.style.color = '#e2e8f0';
+    durationInput.style.background = 'var(--surface-1)';
+    durationInput.style.border = '1px solid var(--card-border)';
+    durationInput.style.color = 'var(--text)';
     durationInput.style.borderRadius = '8px';
     durationInput.style.padding = '8px';
     durationWrap.appendChild(durationInput);
@@ -531,8 +566,8 @@
     var videoStage = document.createElement('div');
     videoStage.id = 'cameraModalVideoStage';
     videoStage.className = 'cam-cell is-offline';
-    videoStage.style.minHeight = '180px';
-    videoStage.style.maxHeight = '70vh';
+    videoStage.style.minHeight = '96px';
+    videoStage.style.maxHeight = '210px';
 
     var videoFeed = document.createElement('div');
     videoFeed.className = 'cam-feed';
@@ -569,8 +604,8 @@
 
     var imgWrap = document.createElement('div');
     imgWrap.className = 'cam-cell is-offline';
-    imgWrap.style.minHeight = '180px';
-    imgWrap.style.maxHeight = '70vh';
+    imgWrap.style.minHeight = '96px';
+    imgWrap.style.maxHeight = '210px';
 
     var imgFeed = document.createElement('div');
     imgFeed.className = 'cam-feed';
@@ -620,15 +655,16 @@
     capturedStatus.style.display = 'flex';
     capturedStatus.style.alignItems = 'center';
     capturedStatus.style.justifyContent = 'space-between';
-    capturedStatus.style.background = '#0b1220';
-    capturedStatus.style.border = '1px solid #1f2937';
+    capturedStatus.style.background = 'var(--surface-1)';
+    capturedStatus.style.border = '1px solid var(--card-border)';
     capturedStatus.style.borderRadius = '8px';
     capturedStatus.style.padding = '10px 12px';
-    capturedStatus.style.color = '#cbd5f5';
+    capturedStatus.style.color = 'var(--text)';
     capturedStatus.style.fontSize = '12px';
     var capturedLabel = document.createElement('div');
     capturedLabel.id = 'cameraModalCapturedLabel';
-    capturedLabel.textContent = 'Captured Image: waiting for capture...';
+    capturedLabel.className = 'camera-status-text';
+    capturedLabel.textContent = 'Captured Image: waiting for capture';
 
     var imageMeta = document.createElement('div');
     imageMeta.style.display = 'flex';
@@ -637,15 +673,15 @@
 
     var imageName = document.createElement('div');
     imageName.id = 'cameraModalImageName';
-    imageName.style.color = '#cbd5f5';
+    imageName.style.color = 'var(--muted)';
     imageName.style.fontSize = '12px';
     imageName.style.display = 'none';
 
     var imageDownload = document.createElement('a');
     imageDownload.id = 'cameraModalImageDownload';
     imageDownload.textContent = 'Download image';
-    imageDownload.style.background = '#1d4ed8';
-    imageDownload.style.color = '#fff';
+    imageDownload.style.background = 'var(--primary)';
+    imageDownload.style.color = 'var(--secondary)';
     imageDownload.style.borderRadius = '6px';
     imageDownload.style.padding = '4px 8px';
     imageDownload.style.textDecoration = 'none';
@@ -661,18 +697,19 @@
     recordedStatus.style.display = 'flex';
     recordedStatus.style.alignItems = 'center';
     recordedStatus.style.justifyContent = 'space-between';
-    recordedStatus.style.background = '#0b1220';
-    recordedStatus.style.border = '1px solid #1f2937';
+    recordedStatus.style.background = 'var(--surface-1)';
+    recordedStatus.style.border = '1px solid var(--card-border)';
     recordedStatus.style.borderRadius = '8px';
     recordedStatus.style.padding = '10px 12px';
-    recordedStatus.style.color = '#cbd5f5';
+    recordedStatus.style.color = 'var(--text)';
     recordedStatus.style.fontSize = '12px';
-    recordedStatus.textContent = 'Recorded Video: waiting for upload...';
+    recordedStatus.className = 'camera-status-text';
+    recordedStatus.textContent = 'Recorded Video: waiting for upload';
 
     var videoWrap = document.createElement('div');
     videoWrap.id = 'cameraModalVideoWrap';
-    videoWrap.style.background = '#0b1220';
-    videoWrap.style.border = '1px solid #1f2937';
+    videoWrap.style.background = 'var(--surface-1)';
+    videoWrap.style.border = '1px solid var(--card-border)';
     videoWrap.style.borderRadius = '8px';
     videoWrap.style.padding = '10px';
     videoWrap.style.display = 'none';
@@ -694,15 +731,15 @@
 
     var filename = document.createElement('div');
     filename.id = 'cameraModalFilename';
-    filename.style.color = '#cbd5f5';
+    filename.style.color = 'var(--muted)';
     filename.style.fontSize = '12px';
     filename.style.display = 'none';
 
     var download = document.createElement('a');
     download.id = 'cameraModalDownload';
     download.textContent = 'Download video';
-    download.style.background = '#1d4ed8';
-    download.style.color = '#fff';
+    download.style.background = 'var(--primary)';
+    download.style.color = 'var(--secondary)';
     download.style.borderRadius = '6px';
     download.style.padding = '6px 10px';
     download.style.textDecoration = 'none';
@@ -721,19 +758,20 @@
 
     var hint = document.createElement('div');
     hint.id = 'cameraModalHint';
-    hint.style.color = '#94a3b8';
+    hint.style.color = 'var(--muted)';
     hint.style.fontSize = '12px';
     hint.textContent = 'Set duration, then send a recording command.';
 
     var send = document.createElement('button');
     send.id = 'cameraModalSend';
     send.textContent = 'Send Record Command';
-    send.style.background = '#2563eb';
-    send.style.color = '#fff';
-    send.style.border = 'none';
+    send.style.background = '#0077ff';
+    send.style.color = '#031a2f';
+    send.style.border = '1px solid rgba(122, 232, 255, 0.35)';
     send.style.padding = '8px 12px';
-    send.style.borderRadius = '8px';
+    send.style.borderRadius = '10px';
     send.style.cursor = 'pointer';
+    send.innerHTML = '<span aria-hidden="true">\u25CF</span><span>Send Record Command</span>';
     send.addEventListener('click', function () {
       var targetId = cameraModalState.deviceId;
       if (!targetId) return;
@@ -743,9 +781,9 @@
     var capture = document.createElement('button');
     capture.id = 'cameraModalCapture';
     capture.textContent = 'Send Capture Command';
-    capture.style.background = '#0f172a';
-    capture.style.color = '#e2e8f0';
-    capture.style.border = '1px solid #334155';
+    send.style.background = '#0077ff';
+    capture.style.color = '#031a2f';
+    capture.style.border = '1px solid rgba(122, 232, 255, 0.35)';
     capture.style.padding = '8px 12px';
     capture.style.borderRadius = '8px';
     capture.style.cursor = 'pointer';
@@ -756,15 +794,16 @@
     });
 
     var videoLabel = document.createElement('div');
+    videoLabel.className = 'camera-section-label';
     videoLabel.textContent = 'VIDEO';
-    videoLabel.style.color = '#93c5fd';
+    videoLabel.style.color = 'var(--primary)';
     videoLabel.style.fontSize = '12px';
     videoLabel.style.letterSpacing = '0.12em';
     videoLabel.style.textTransform = 'uppercase';
 
     var videoSection = document.createElement('div');
     videoSection.style.display = 'grid';
-    videoSection.style.gap = '10px';
+    videoSection.style.gap = '8px';
 
     var videoActions = document.createElement('div');
     videoActions.style.display = 'flex';
@@ -778,19 +817,20 @@
 
     var divider = document.createElement('div');
     divider.style.height = '1px';
-    divider.style.background = '#1f2937';
+    divider.style.background = 'var(--card-border)';
     divider.style.margin = '4px 0';
 
     var captureLabel = document.createElement('div');
+    captureLabel.className = 'camera-section-label';
     captureLabel.textContent = 'CAPTURE';
-    captureLabel.style.color = '#cbd5f5';
+    captureLabel.style.color = 'var(--muted)';
     captureLabel.style.fontSize = '12px';
     captureLabel.style.letterSpacing = '0.12em';
     captureLabel.style.textTransform = 'uppercase';
 
     var captureSection = document.createElement('div');
     captureSection.style.display = 'grid';
-    captureSection.style.gap = '10px';
+    captureSection.style.gap = '8px';
 
     var captureActions = document.createElement('div');
     captureActions.style.display = 'flex';
@@ -803,11 +843,23 @@
 
     frame.appendChild(header);
     frame.appendChild(settings);
-    frame.appendChild(videoLabel);
-    frame.appendChild(videoSection);
-    frame.appendChild(divider);
-    frame.appendChild(captureLabel);
-    frame.appendChild(captureSection);
+    var mediaGrid = document.createElement('div');
+    mediaGrid.className = 'camera-media-grid';
+
+    var videoBlock = document.createElement('div');
+    videoBlock.className = 'camera-media-block';
+    videoBlock.appendChild(videoLabel);
+    videoBlock.appendChild(videoSection);
+
+    var captureBlock = document.createElement('div');
+    captureBlock.className = 'camera-media-block';
+    captureBlock.appendChild(captureLabel);
+    captureBlock.appendChild(captureSection);
+
+    mediaGrid.appendChild(videoBlock);
+    mediaGrid.appendChild(captureBlock);
+
+    frame.appendChild(mediaGrid);
     footer.appendChild(hint);
     frame.appendChild(footer);
     var toast = document.createElement('div');
@@ -815,9 +867,9 @@
     toast.style.position = 'absolute';
     toast.style.right = '24px';
     toast.style.top = '18px';
-    toast.style.background = 'rgba(30, 64, 175, 0.95)';
-    toast.style.color = '#e2e8f0';
-    toast.style.border = '1px solid rgba(96, 165, 250, 0.5)';
+    toast.style.background = 'linear-gradient(180deg, var(--surface-2), var(--card-bg))';
+    toast.style.color = 'var(--text)';
+    toast.style.border = '1px solid var(--primary)';
     toast.style.borderRadius = '10px';
     toast.style.padding = '10px 14px';
     toast.style.display = 'flex';
@@ -843,9 +895,9 @@
 
     var done = document.createElement('button');
     done.textContent = 'Done';
-    done.style.background = '#1e3a8a';
-    done.style.color = '#fff';
-    done.style.border = '1px solid rgba(191, 219, 254, 0.35)';
+    done.style.background = 'var(--primary)';
+    done.style.color = 'var(--secondary)';
+    done.style.border = '1px solid var(--card-border)';
     done.style.borderRadius = '6px';
     done.style.padding = '4px 8px';
     done.style.cursor = 'pointer';
@@ -853,8 +905,8 @@
     var close = document.createElement('button');
     close.textContent = 'Close';
     close.style.background = 'transparent';
-    close.style.color = '#e2e8f0';
-    close.style.border = '1px solid rgba(148, 163, 184, 0.6)';
+    close.style.color = 'var(--text)';
+    close.style.border = '1px solid var(--card-border)';
     close.style.borderRadius = '6px';
     close.style.padding = '4px 8px';
     close.style.cursor = 'pointer';

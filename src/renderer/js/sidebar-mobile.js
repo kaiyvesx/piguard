@@ -8,6 +8,8 @@
   var deviceColor = new Map();
   var deviceMap = new Map();
   var gpsEvents = [];
+  var devicesLoading = true;
+  var gpsLoading = true;
   var listenersRegistered = false;
 
   var getEl = shared.getEl || function (id) { return document.getElementById(id); };
@@ -18,6 +20,39 @@
   var lastSeenText = shared.lastSeenText || function () { return "unknown"; };
   var isActive = shared.isActive || function () { return false; };
   var colorFromIndex = shared.colorFromIndex || function (idx) { return "hsl(" + ((idx * 47) % 360) + ",72%,54%)"; };
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function getDeviceSkeletonMarkup() {
+    return "<div class=\"tracking-sidebar-skeleton\" aria-hidden=\"true\">"
+      + "<div class=\"tracking-sidebar-skeleton-line w-55\"></div>"
+      + "<div class=\"tracking-sidebar-skeleton-line w-90\"></div>"
+      + "<div class=\"tracking-sidebar-skeleton-line w-70\"></div>"
+      + "</div>"
+      + "<div class=\"tracking-sidebar-skeleton\" aria-hidden=\"true\">"
+      + "<div class=\"tracking-sidebar-skeleton-line w-48\"></div>"
+      + "<div class=\"tracking-sidebar-skeleton-line w-88\"></div>"
+      + "<div class=\"tracking-sidebar-skeleton-line w-62\"></div>"
+      + "</div>";
+  }
+
+  function getGpsSkeletonMarkup() {
+    return "<div class=\"tracking-sidebar-skeleton\" aria-hidden=\"true\">"
+      + "<div class=\"tracking-sidebar-skeleton-line w-44\"></div>"
+      + "<div class=\"tracking-sidebar-skeleton-line w-74\"></div>"
+      + "</div>"
+      + "<div class=\"tracking-sidebar-skeleton\" aria-hidden=\"true\">"
+      + "<div class=\"tracking-sidebar-skeleton-line w-51\"></div>"
+      + "<div class=\"tracking-sidebar-skeleton-line w-67\"></div>"
+      + "</div>";
+  }
 
   function isDeviceOnline(device) {
     var status = String(device && device.status || '').trim().toLowerCase();
@@ -72,6 +107,11 @@
   function renderDevices() {
     var list = getEl("mobileSidebarDevicesList");
     if (!list) { return; }
+    if (devicesLoading) {
+      list.innerHTML = getDeviceSkeletonMarkup();
+      renderPresence();
+      return;
+    }
     var rows = Array.from(deviceMap.values()).sort(function (a, b) { return new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0); });
     if (!rows.length) {
       list.innerHTML = "<div class=\"tracking-sidebar-location-empty\">Waiting for mobile devices...</div>";
@@ -81,7 +121,7 @@
     list.innerHTML = rows.map(function (device) {
       var dot = colorFor(device.deviceId);
       var coords = (toNum(device.lat) != null && toNum(device.lng) != null) ? toNum(device.lat).toFixed(5) + ", " + toNum(device.lng).toFixed(5) : "No coordinates";
-      return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div><span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:" + dot + ";\"></span><strong>" + friendlyName(device.deviceId) + "</strong></div><div style=\"opacity:.82;margin-top:2px;\">Status: " + (isDeviceOnline(device) ? "active" : "inactive") + " | Seen: " + lastSeenText(device.lastSeen) + "</div><div style=\"opacity:.82;\">Coords: " + coords + "</div></div>";
+      return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div><span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:" + dot + ";\"></span><strong>" + escapeHtml(friendlyName(device.deviceId)) + "</strong></div><div style=\"opacity:.82;margin-top:2px;\">Status: " + (isDeviceOnline(device) ? "active" : "inactive") + " | Seen: " + escapeHtml(lastSeenText(device.lastSeen)) + "</div><div style=\"opacity:.82;\">Coords: " + escapeHtml(coords) + "</div></div>";
     }).join("");
     renderPresence();
   }
@@ -89,6 +129,10 @@
   function renderGpsLog() {
     var list = getEl("mobileSidebarGpsLogList");
     if (!list) { return; }
+    if (gpsLoading) {
+      list.innerHTML = getGpsSkeletonMarkup();
+      return;
+    }
     if (!gpsEvents.length) {
       list.innerHTML = "<div class=\"tracking-sidebar-location-empty\">No GPS entries yet.</div>";
       return;
@@ -96,11 +140,13 @@
     list.innerHTML = gpsEvents.slice(0, 10).map(function (item) {
       var dot = colorFor(item.deviceId);
       if (!isValidLocation(item.latitude, item.longitude)) { return ""; }
-      return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div>[" + new Date(item.timestamp).toLocaleTimeString() + "] [" + friendlyName(item.deviceId) + "]</div><div style=\"opacity:.84;\">[" + item.latitude.toFixed(5) + ", " + item.longitude.toFixed(5) + "]</div></div>";
+      return "<div class=\"tracking-sidebar-location-line\" style=\"border-left-color:" + dot + ";\"><div>[" + escapeHtml(new Date(item.timestamp || Date.now()).toLocaleTimeString()) + "] [" + escapeHtml(friendlyName(item.deviceId)) + "]</div><div style=\"opacity:.84;\">[" + escapeHtml(item.latitude.toFixed(5)) + ", " + escapeHtml(item.longitude.toFixed(5)) + "]</div></div>";
     }).join("");
   }
 
   function handleDevicesList(payload) {
+    devicesLoading = false;
+    gpsLoading = false;
     var rows = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.devices) ? payload.devices : []);
     if (!rows.length) { renderDevices(); return; }
     rows.forEach(function (item) {
@@ -119,6 +165,7 @@
   }
 
   function handleLocation(payload) {
+    gpsLoading = false;
     var id = getDeviceId(payload);
     if (!id || isRaspiDeviceId(id)) { return; }
     var lat = toNum(payload && payload.latitude != null ? payload.latitude : payload && payload.lat);
@@ -165,10 +212,12 @@
 
   function registerPanelBridgeEvents() {
     window.addEventListener("piguard:mobile-devices", function (evt) {
+      devicesLoading = false;
       var devices = evt && evt.detail && Array.isArray(evt.detail.devices) ? evt.detail.devices : [];
       handleDevicesList({ devices: devices });
     });
     window.addEventListener("piguard:mobile-gps-log", function (evt) {
+      gpsLoading = false;
       var events = evt && evt.detail && Array.isArray(evt.detail.events) ? evt.detail.events : [];
       gpsEvents = events.slice(0, 10).map(function (item) {
         return {
@@ -185,20 +234,32 @@
   function loadCached() {
     if (!window.electronAPI || typeof window.electronAPI.invoke !== "function") { return; }
     window.electronAPI.invoke("get-cached-devices").then(function (result) {
+      devicesLoading = false;
+      gpsLoading = false;
       var rows = Array.isArray(result) ? result : (result && Array.isArray(result.data) ? result.data : []);
       handleDevicesList({ devices: rows });
     }).catch(function (err) {
+      devicesLoading = false;
+      gpsLoading = false;
       console.warn("[Sidebar] Failed to load cached devices:", err && err.message ? err.message : err);
+      renderDevices();
+      renderGpsLog();
     });
   }
 
   function loadSupabaseDevices() {
     if (!window.electronAPI || typeof window.electronAPI.getSupabaseDevices !== "function") { return; }
     window.electronAPI.getSupabaseDevices().then(function (result) {
+      devicesLoading = false;
+      gpsLoading = false;
       var rows = Array.isArray(result) ? result : (result && Array.isArray(result.data) ? result.data : []);
       handleDevicesList({ devices: rows });
     }).catch(function (err) {
+      devicesLoading = false;
+      gpsLoading = false;
       console.warn("[Sidebar] Failed to load Supabase devices:", err && err.message ? err.message : err);
+      renderDevices();
+      renderGpsLog();
     });
   }
 
