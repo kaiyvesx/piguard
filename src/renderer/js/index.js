@@ -38,6 +38,13 @@ const PARENT_GROUPS = {
   mobile: 'navMobileGroup',
 };
 
+const SIDEBAR_PANELS = {
+  rsp: 'sidebarGps',
+  mobile: 'sidebarMobile',
+  sms: 'sidebarSms',
+  camera: 'sidebarCamera',
+};
+
 let currentPanel = 'gps';
 let expandedParent = null;
 
@@ -50,6 +57,16 @@ function setPanelVisibility(panelName, visible) {
   const panelEl = safeGetElement(panelId);
   if (!panelEl) return;
   panelEl.classList.toggle('active', !!visible);
+}
+
+function syncSidebarContent(panelName) {
+  const parentName = PANEL_TO_PARENT[panelName] || 'rsp';
+
+  Object.entries(SIDEBAR_PANELS).forEach(([sidebarName, elementId]) => {
+    const sidebarEl = safeGetElement(elementId);
+    if (!sidebarEl) return;
+    sidebarEl.style.display = sidebarName === parentName ? 'block' : 'none';
+  });
 }
 
 function syncSidebarState(routeName) {
@@ -83,6 +100,7 @@ function switchPanel(name, options = {}) {
 
   currentPanel = nextPanel;
   setPanelVisibility(nextPanel, true);
+  syncSidebarContent(nextPanel);
   if (Object.prototype.hasOwnProperty.call(options, 'expandedParent')) {
     expandedParent = options.expandedParent;
   } else {
@@ -130,6 +148,7 @@ function bindSidebarNavigation() {
 
 bindSidebarNavigation();
 setPanelVisibility(currentPanel, true);
+syncSidebarContent(currentPanel);
 syncSidebarState(currentPanel);
 
 // ══════════════════════════════════════════

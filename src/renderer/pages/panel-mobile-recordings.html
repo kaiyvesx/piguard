@@ -16,14 +16,43 @@
     <header class="media-panel-header">
       <div>
         <p class="media-panel-kicker">Mobile</p>
-        <h2 class="media-panel-title">All Recorded Videos</h2>
-        <p class="media-panel-subtitle" id="mediaStatusMobileRecordings">Waiting for recorded videos from the device.</p>
+        <h2 class="media-panel-title">Storage Browser</h2>
+        <p class="media-panel-subtitle" id="mediaStatusMobileRecordings">Browse recordings stored on the Ubuntu server.</p>
       </div>
       <div class="media-panel-count" id="mediaCountMobileRecordings">0 files</div>
     </header>
 
-    <div class="media-panel-list" id="mediaListMobileRecordings">
-      <div class="media-empty">No recorded videos available yet.</div>
+    <section class="storage-browser-card">
+      <div class="storage-browser-grid">
+        <div class="storage-browser-field">
+          <span class="storage-browser-label">Folder</span>
+          <input type="text" value="captured_video" disabled />
+        </div>
+        <label class="storage-browser-field">
+          <span class="storage-browser-label">Backend URL</span>
+          <input id="recordingStorageBackendBase" type="text" placeholder="http://127.0.0.1:8000" disabled/>
+        </label>
+        <label class="storage-browser-field">
+          <span class="storage-browser-label">Storage Token</span>
+          <input id="recordingStorageAdminToken" type="password" placeholder="Required for /api/admin/files" />
+        </label>
+      </div>
+
+      <div class="storage-browser-toolbar">
+        <div class="storage-browser-toolbar-actions">
+          <div class="storage-browser-sort-group" role="group" aria-label="Sort recordings">
+            <button type="button" class="storage-browser-sort is-active" id="recordingStorageSortDate" data-sort-key="date">Date</button>
+            <button type="button" class="storage-browser-sort" id="recordingStorageSortName" data-sort-key="name">A-Z</button>
+            <button type="button" class="storage-browser-sort" id="recordingStorageSortSize" data-sort-key="size">File Size</button>
+          </div>
+          <button type="button" class="storage-browser-refresh" id="recordingStorageRefreshBtn">Refresh Storage</button>
+        </div>
+        <div class="storage-browser-hint" id="recordingStorageHint">No files loaded yet.</div>
+      </div>
+    </section>
+
+    <div class="media-panel-list" id="recordingStorageList">
+      <div class="media-empty">No files loaded yet.</div>
     </div>
   </section>
 </div>
