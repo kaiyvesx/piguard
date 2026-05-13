@@ -42,6 +42,7 @@ module.exports = {
   // Timeouts (ms)
   connectionTimeout: 10000,
   commandTimeout: 30000,
+  commandQueueActiveWindowMs: Number(process.env.COMMAND_QUEUE_ACTIVE_WINDOW_MS || 120000),
   reconnectDelay: 3000,
   pingInterval: 25000,
 };

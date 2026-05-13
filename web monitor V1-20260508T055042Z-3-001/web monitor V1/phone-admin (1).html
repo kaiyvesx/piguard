@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Phone Admin Monitor</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <nav class="top-nav">
+        <a class="nav-link" href="./index (1).html">Raspberry Monitor</a>
+        <a class="nav-link active" href="./phone-admin (1).html">Phone Admin Monitor</a>
+        <a class="nav-link" href="./camera-admin (1).html">Camera Admin Monitor</a>
+      </nav>
+
+      <h1>Phone Admin Monitor</h1>
+      <p class="subtitle">
+        Backend admin view: detected phones, device IDs, and emitted event types.
+      </p>
+
+      <section class="card">
+        <h2>Configuration</h2>
+        <div class="grid">
+          <label>
+            Backend Base URL
+            <input id="backendBase" type="text" placeholder="http://10.10.218.109:8000" />
+          </label>
+          <label>
+            Admin Token
+            <input id="adminToken" type="password" placeholder="Required for /admin endpoints" />
+          </label>
+          <label>
+            Logs Limit
+            <input id="logsLimit" type="number" min="20" max="1000" step="20" value="200" />
+          </label>
+          <label>
+            Refresh Interval (ms)
+            <input id="refreshMs" type="number" min="1000" step="1000" value="5000" />
+          </label>
+        </div>
+        <div class="row">
+          <button id="saveBtn">Save Config</button>
+          <button id="runBtn">Run Check Now</button>
+          <button id="autoBtn">Start Auto Refresh</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Phone Detection Status</h2>
+        <div class="status-grid">
+          <div>
+            <strong>Backend Health</strong>
+            <p id="backendHealth" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Admin Devices Endpoint</strong>
+            <p id="devicesStatus" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Admin Logs Endpoint</strong>
+            <p id="logsStatus" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Detected Phones</strong>
+            <p id="phoneCount" class="status unknown">Unknown</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Detected Devices (Phones)</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Device ID</th>
+              <th>Status</th>
+              <th>Last Seen</th>
+              <th>Last Event Type</th>
+              <th>Output Fields</th>
+            </tr>
+          </thead>
+          <tbody id="deviceRows">
+            <tr>
+              <td colspan="5">No data yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h2>Event Type Summary</h2>
+        <pre id="eventTypes">{}</pre>
+      </section>
+
+      <section class="card">
+        <h2>Raw API Data</h2>
+        <pre id="output">{}</pre>
+      </section>
+    </main>
+
+    <script src="./phone-admin (1).js"></script>
+  </body>
+</html>

@@ -212,6 +212,12 @@ contextBridge.exposeInMainWorld('backendBridge', {
 
   getDeviceInfo: () => unwrapResponse(ipcRenderer.invoke('backend:getDeviceInfo')),
   getBatteryStatus: () => unwrapResponse(ipcRenderer.invoke('backend:getBatteryStatus')),
+  getAdminUsers: () => unwrapResponse(ipcRenderer.invoke('backend:getAdminUsers')),
+  getAdminLocationsLatest: () => unwrapResponse(ipcRenderer.invoke('backend:getAdminLocationsLatest')),
+  getAdminCommands: () => unwrapResponse(ipcRenderer.invoke('backend:getAdminCommands')),
+  getAdminResponses: () => unwrapResponse(ipcRenderer.invoke('backend:getAdminResponses')),
+  sendRecordCommand: (target = {}, options = {}) =>
+    unwrapResponse(ipcRenderer.invoke('backend:sendRecordCommand', target, options)),
 
   // =====================
   // Generic Command

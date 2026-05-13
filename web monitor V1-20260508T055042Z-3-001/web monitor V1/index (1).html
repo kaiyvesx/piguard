@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Raspi Connection Monitor</title>
+    <link rel="stylesheet" href="./styles (1).css" />
+  </head>
+  <body>
+    <main class="container">
+      <nav class="top-nav">
+        <a class="nav-link active" href="./index (1).html">Raspberry Monitor</a>
+        <a class="nav-link" href="./phone-admin (1).html">Phone Admin Monitor</a>
+        <a class="nav-link" href="./camera-admin (1).html">Camera Admin Monitor</a>
+      </nav>
+
+      <h1>Raspberry Pi Monitor</h1>
+      <p class="subtitle">
+        Raspberry-side checks only: Pi health, Pi status, Pi GPS, and backend log
+        visibility.
+      </p>
+
+      <section class="card">
+        <h2>Configuration</h2>
+        <div class="grid">
+          <label>
+            Raspberry Pi Base URL
+            <input id="piBase" type="text" placeholder="http://10.10.218.109:8000" />
+          </label>
+          <label>
+            Backend Base URL
+            <input id="backendBase" type="text" placeholder="http://10.10.218.109:8000" />
+          </label>
+          <label>
+            Admin Token (for /admin/logs)
+            <input id="adminToken" type="password" placeholder="Optional bearer token" />
+          </label>
+          <label>
+            Refresh Interval (ms)
+            <input id="refreshMs" type="number" min="1000" step="1000" value="5000" />
+          </label>
+        </div>
+        <div class="row">
+          <button id="saveBtn">Save Config</button>
+          <button id="runBtn">Run Check Now</button>
+          <button id="autoBtn">Start Auto Refresh</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Live Status</h2>
+        <div class="status-grid">
+          <div>
+            <strong>Pi Health</strong>
+            <p id="piHealth" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Pi Status Endpoint</strong>
+            <p id="piStatus" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Pi GPS Latest</strong>
+            <p id="piGps" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Backend Health</strong>
+            <p id="backendHealth" class="status unknown">Unknown</p>
+          </div>
+          <div>
+            <strong>Backend Location Updates</strong>
+            <p id="backendLogs" class="status unknown">Unknown</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="recording-admin-panel">
+        <h2>Remote Camera Recording</h2>
+        <p class="subtitle">Live device list from <code>/api/devices</code>, record command controls, and upload links streamed from Socket.IO.</p>
+        <div class="status-grid">
+          <div>
+            <strong>Socket State</strong>
+            <p id="recordingSocketState" class="status unknown">Disconnected</p>
+          </div>
+          <div>
+            <strong>Connected Devices</strong>
+            <p id="recordingDeviceCount" class="status unknown">0</p>
+          </div>
+          <div>
+            <strong>Latest Uploads</strong>
+            <p id="recordingUploadCount" class="status unknown">0</p>
+          </div>
+        </div>
+
+        <div class="camera-layout">
+          <section class="card">
+            <h3>Connected Devices</h3>
+            <div id="recordingDeviceList" class="device-list"></div>
+          </section>
+
+          <div class="panel-stack">
+            <section class="card">
+              <h3>Recording Controls</h3>
+              <div class="grid">
+                <label>
+                  Camera Side
+                  <div class="row">
+                    <label class="check-pill"><input type="radio" name="recording-camera" value="front" checked /> Front</label>
+                    <label class="check-pill"><input type="radio" name="recording-camera" value="back" /> Back</label>
+                  </div>
+                </label>
+                <label>
+                  Duration (seconds)
+                  <input id="recordingDurationSeconds" type="number" min="1" max="600" step="1" value="15" />
+                </label>
+                <label>
+                  Backend URL
+                  <input id="recordingBackendBase" type="text" placeholder="http://127.0.0.1:8000" />
+                </label>
+                <label>
+                  Admin Token
+                  <input id="recordingAdminToken" type="password" placeholder="Optional bearer token" />
+                </label>
+              </div>
+              <div class="row">
+                <button id="recordingRefreshBtn">Refresh Devices</button>
+                <button id="recordingSendBtn">Send Record Command</button>
+              </div>
+              <p id="recordingSelectionSummary" class="summary-text">Select a connected device to queue a recording.</p>
+            </section>
+
+            <section class="card">
+              <h3>Upload Feed</h3>
+              <div id="recordingUploadFeed" class="activity-list"></div>
+            </section>
+
+            <section class="card">
+              <h3>Storage Browser</h3>
+              <div class="grid">
+                <label>
+                  Folder
+                  <select id="recordingStorageFolder">
+                    <option value="captured_video">Captured Video</option>
+                    <option value="captured_img">Captured Images</option>
+                    <option value="captured_location">Captured Location</option>
+                  </select>
+                </label>
+                <label>
+                  Backend URL
+                  <input id="recordingStorageBackendBase" type="text" placeholder="http://127.0.0.1:8000" />
+                </label>
+                <label>
+                  Storage Token
+                  <input id="recordingStorageAdminToken" type="password" placeholder="Required for /api/admin/files" />
+                </label>
+              </div>
+              <div class="row">
+                <button id="recordingStorageRefreshBtn">Refresh Storage</button>
+              </div>
+              <div id="recordingStorageList" class="activity-list"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Latest Data</h2>
+        <pre id="output">{}</pre>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+    <script src="./admin_recording (1).js"></script>
+  </body>
+</html>

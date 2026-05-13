@@ -184,6 +184,51 @@ function initializeIpcHandlers() {
     }
   });
 
+  ipcMain.handle('backend:getAdminUsers', async () => {
+    try {
+      const data = await backendApi.getAdminUsers();
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('backend:getAdminLocationsLatest', async () => {
+    try {
+      const data = await backendApi.getAdminLocationsLatest();
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('backend:getAdminCommands', async () => {
+    try {
+      const data = await backendApi.getAdminCommands();
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('backend:getAdminResponses', async () => {
+    try {
+      const data = await backendApi.getAdminResponses();
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('backend:sendRecordCommand', async (_event, target = {}, options = {}) => {
+    try {
+      const data = await backendApi.sendRecordCommand(target, options);
+      return { success: true, data };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // =====================
   // Generic Command
   // =====================
