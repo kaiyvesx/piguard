@@ -4,6 +4,8 @@
     sidebar: "components/sidebar.html",
     gps: "pages/panel-gps.html",
     mobile: "pages/panel-mobile.html",
+    mobileRecordings: "pages/panel-mobile-recordings.html",
+    mobileImages: "pages/panel-mobile-images.html",
     sms: "pages/panel-sms.html",
     camera: "pages/panel-camera.html"
   };
@@ -30,11 +32,13 @@
     const root = document.getElementById("appRoot");
     if (!root) return;
 
-    const [headerHtml, sidebarHtml, gpsHtml, mobileHtml, smsHtml, cameraHtml] = await Promise.all([
+    const [headerHtml, sidebarHtml, gpsHtml, mobileHtml, mobileRecordingsHtml, mobileImagesHtml, smsHtml, cameraHtml] = await Promise.all([
       loadPartial(PARTIALS.header),
       loadPartial(PARTIALS.sidebar),
       loadPartial(PARTIALS.gps),
       loadPartial(PARTIALS.mobile),
+      loadPartial(PARTIALS.mobileRecordings),
+      loadPartial(PARTIALS.mobileImages),
       loadPartial(PARTIALS.sms),
       loadPartial(PARTIALS.camera)
     ]);
@@ -45,6 +49,8 @@
       sidebarHtml,
       gpsHtml,
       mobileHtml,
+      mobileRecordingsHtml,
+      mobileImagesHtml,
       smsHtml,
       cameraHtml,
       '</div>'

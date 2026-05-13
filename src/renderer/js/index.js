@@ -1,30 +1,136 @@
 // ══════════════════════════════════════════
 //  PANEL SWITCHING
 // ══════════════════════════════════════════
-const panels     = { gps: 'panel-gps', mobile: 'panel-mobile', sms: 'panel-sms', camera: 'panel-camera' };
-const navBtns    = { gps: 'navGps',    mobile: 'navMobile',    sms: 'navSms',    camera: 'navCamera'    };
-const sidebarCtx = { gps: 'sidebarGps', mobile: 'sidebarMobile', sms: 'sidebarSms', camera: 'sidebarCamera' };
-let currentPanel = 'gps';
+const PANELS = {
+  gps: 'panel-gps',
+  mobile: 'panel-mobile',
+  sms: 'panel-sms',
+  camera: 'panel-camera',
+  'mobile-recordings': 'panel-mobile-recordings',
+  'mobile-images': 'panel-mobile-images',
+};
 
-function switchPanel(name) {
-  if (name === currentPanel) return;
-  document.getElementById(panels[currentPanel]).classList.remove('active');
-  document.getElementById(navBtns[currentPanel]).classList.remove('active');
-  document.getElementById(sidebarCtx[currentPanel]).style.display = 'none';
-  document.getElementById(panels[name]).classList.add('active');
-  document.getElementById(navBtns[name]).classList.add('active');
-  document.getElementById(sidebarCtx[name]).style.display = 'block';
-  currentPanel = name;
-  if (name === 'gps') {
-    setTimeout(() => { if (typeof map !== 'undefined') map.invalidateSize(); }, 50);
+const SIDEBAR_ROUTES = {
+  gps: 'navRsp',
+  mobile: 'navMobile',
+  sms: 'navSms',
+  camera: 'navCamera',
+  'mobile-recordings': 'navMobileRecordings',
+  'mobile-images': 'navMobileImages',
+};
+
+const PANEL_TO_PARENT = {
+  gps: 'rsp',
+  sms: 'rsp',
+  camera: 'rsp',
+  mobile: 'mobile',
+  'mobile-recordings': 'mobile',
+  'mobile-images': 'mobile',
+};
+
+const PARENT_TO_ROUTE = {
+  rsp: 'gps',
+  mobile: 'mobile',
+};
+
+const PARENT_GROUPS = {
+  rsp: 'navRspGroup',
+  mobile: 'navMobileGroup',
+};
+
+let currentPanel = 'gps';
+let expandedParent = null;
+
+function safeGetElement(id) {
+  return id ? document.getElementById(id) : null;
+}
+
+function setPanelVisibility(panelName, visible) {
+  const panelId = PANELS[panelName];
+  const panelEl = safeGetElement(panelId);
+  if (!panelEl) return;
+  panelEl.classList.toggle('active', !!visible);
+}
+
+function syncSidebarState(routeName) {
+  const activeRoute = PANELS[routeName] ? routeName : 'gps';
+
+  Object.entries(SIDEBAR_ROUTES).forEach(([panelName, elementId]) => {
+    const el = safeGetElement(elementId);
+    if (el) el.classList.toggle('active', panelName === activeRoute);
+  });
+
+  Object.entries(PARENT_GROUPS).forEach(([parentName, groupId]) => {
+    const button = safeGetElement(parentName === 'rsp' ? 'navRsp' : 'navMobile');
+    const group = safeGetElement(groupId);
+    const isOpen = expandedParent === parentName;
+    if (button) {
+      button.classList.toggle('active', PANEL_TO_PARENT[activeRoute] === parentName || activeRoute === PARENT_TO_ROUTE[parentName]);
+      button.classList.toggle('is-expanded', isOpen);
+      button.setAttribute('aria-expanded', String(isOpen));
+    }
+    if (group) group.hidden = !isOpen;
+  });
+}
+
+function switchPanel(name, options = {}) {
+  const nextPanel = PANELS[name] ? name : 'gps';
+  const previousPanel = currentPanel;
+
+  if (previousPanel !== nextPanel) {
+    setPanelVisibility(previousPanel, false);
   }
-  if (name === 'mobile') {
-    setTimeout(() => { if (typeof mobileMap !== 'undefined') mobileMap.invalidateSize(); }, 50);
+
+  currentPanel = nextPanel;
+  setPanelVisibility(nextPanel, true);
+  if (Object.prototype.hasOwnProperty.call(options, 'expandedParent')) {
+    expandedParent = options.expandedParent;
+  } else {
+    expandedParent = PANEL_TO_PARENT[nextPanel] || expandedParent;
   }
+  syncSidebarState(nextPanel);
+
+  if (nextPanel === 'gps') {
+    setTimeout(() => { if (typeof map !== 'undefined' && map && typeof map.invalidateSize === 'function') map.invalidateSize(); }, 50);
+  }
+  if (nextPanel === 'mobile') {
+    setTimeout(() => { if (typeof mobileMap !== 'undefined' && mobileMap && typeof mobileMap.invalidateSize === 'function') mobileMap.invalidateSize(); }, 50);
+  }
+
   if (typeof window.onDashboardPanelChange === 'function') {
-    window.onDashboardPanelChange(name);
+    window.onDashboardPanelChange(nextPanel);
+  }
+  if (typeof window.onDashboardMediaChange === 'function' && (nextPanel === 'mobile-recordings' || nextPanel === 'mobile-images')) {
+    window.onDashboardMediaChange(nextPanel);
   }
 }
+
+function toggleParent(parentName) {
+  const route = PARENT_TO_ROUTE[parentName];
+  if (!route) return;
+  const nextExpanded = expandedParent === parentName ? null : parentName;
+  switchPanel(route, { expandedParent: nextExpanded });
+}
+
+function bindSidebarNavigation() {
+  const rspButton = safeGetElement('navRsp');
+  const mobileButton = safeGetElement('navMobile');
+  const smsButton = safeGetElement('navSms');
+  const cameraButton = safeGetElement('navCamera');
+  const mobileRecordingsButton = safeGetElement('navMobileRecordings');
+  const mobileImagesButton = safeGetElement('navMobileImages');
+
+  if (rspButton) rspButton.addEventListener('click', () => toggleParent('rsp'));
+  if (mobileButton) mobileButton.addEventListener('click', () => toggleParent('mobile'));
+  if (smsButton) smsButton.addEventListener('click', () => switchPanel('sms'));
+  if (cameraButton) cameraButton.addEventListener('click', () => switchPanel('camera'));
+  if (mobileRecordingsButton) mobileRecordingsButton.addEventListener('click', () => switchPanel('mobile-recordings'));
+  if (mobileImagesButton) mobileImagesButton.addEventListener('click', () => switchPanel('mobile-images'));
+}
+
+bindSidebarNavigation();
+setPanelVisibility(currentPanel, true);
+syncSidebarState(currentPanel);
 
 // ══════════════════════════════════════════
 //  MAP
