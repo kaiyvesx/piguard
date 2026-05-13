@@ -79,6 +79,19 @@
       applyTrackingMessageLog(data);
     });
 
+    // Admin data event listeners
+    backendApi.on('admin:users', (data) => {
+      handleAdminUsersUpdate(data);
+    });
+
+    backendApi.on('admin:locations_latest', (data) => {
+      handleAdminLocationsUpdate(data);
+    });
+
+    backendApi.on('admin:commands', (data) => {
+      handleAdminCommandsUpdate(data);
+    });
+
     if (hasTrackingBridge) {
       console.log('[API] Mobile tracking listeners are handled inline in panel/sidebar templates');
     }
@@ -258,6 +271,12 @@
   const cameraRecordingActiveCountEl = document.getElementById('cameraRecordingActiveCount');
   const cameraRecordingListEl = document.getElementById('cameraRecordingList');
   const cameraRecordingLastActionEl = document.getElementById('cameraRecordingLastAction');
+  const adminUsersCountEl = document.getElementById('adminUsersCount');
+  const adminUsersListEl = document.getElementById('adminUsersList');
+  const adminLatestLocationEl = document.getElementById('adminLatestLocation');
+  const adminCommandsListEl = document.getElementById('adminCommandsList');
+  const adminResponsesListEl = document.getElementById('adminResponsesList');
+  const adminDataStatusEl = document.getElementById('adminDataStatus');
   const trackingCardsEl = document.getElementById('trackingDeviceCards');
   let trackingLogPanelEl = document.getElementById('trackingLogPanel');
   let trackingLogToggleEl = document.getElementById('trackingLogToggle');
@@ -321,6 +340,14 @@
   let cameraMenuTargetIndex = 'all';
   let lastRecordingActionLabel = 'No recording command sent';
   let expandedCameraIndex = null;
+  let lastAdminData = {
+    users: [],
+    latestLocation: null,
+    commands: [],
+    responses: [],
+    updatedAt: null,
+    status: 'Waiting for admin queries...',
+  };
   const trackingDevices = new Map();
   const trackingVisuals = new Map();
   const deviceLayers = new Map();
@@ -1359,6 +1386,88 @@
     }).join('');
   }
 
+  // Admin data handlers
+  function handleAdminUsersUpdate(data) {
+    const users = Array.isArray(data) ? data : (data && data.payload ? data.payload : []);
+    lastAdminData.users = users;
+    lastAdminData.updatedAt = new Date().toISOString();
+    renderAdminUsersPanel();
+  }
+
+  function handleAdminLocationsUpdate(data) {
+    const locations = Array.isArray(data) ? data : (data && data.payload ? data.payload : []);
+    lastAdminData.latestLocation = Array.isArray(locations) && locations.length > 0 ? locations[0] : null;
+    lastAdminData.updatedAt = new Date().toISOString();
+    renderAdminLocationsPanel();
+  }
+
+  function handleAdminCommandsUpdate(data) {
+    const commands = Array.isArray(data) ? data : (data && data.payload ? data.payload : []);
+    lastAdminData.commands = commands;
+    lastAdminData.updatedAt = new Date().toISOString();
+    renderAdminCommandsPanel();
+  }
+
+  function renderAdminUsersPanel() {
+    if (!adminUsersCountEl && !adminUsersListEl) return;
+    const users = lastAdminData.users || [];
+    if (adminUsersCountEl) {
+      adminUsersCountEl.textContent = String(users.length);
+    }
+    if (adminUsersListEl) {
+      if (!users.length) {
+        adminUsersListEl.innerHTML = '<div style="color:var(--muted);font-size:0.75rem;padding:8px;">No users data available</div>';
+        return;
+      }
+      adminUsersListEl.innerHTML = users.slice(0, 10).map((user, idx) => {
+        const userId = user.id || user.user_id || String(idx);
+        const username = user.username || user.name || String(userId).slice(0, 12);
+        const deviceCount = user.device_count || user.queued_count || 0;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:0.7rem;border-bottom:1px solid rgba(0,170,255,0.1);">
+          <span>${escapeHtml(username)}</span>
+          <span style="color:var(--muted);">${deviceCount} queued</span>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  function renderAdminLocationsPanel() {
+    if (!adminLatestLocationEl) return;
+    const location = lastAdminData.latestLocation;
+    if (!location) {
+      adminLatestLocationEl.innerHTML = '<div style="color:var(--muted);font-size:0.75rem;padding:8px;">No location data available</div>';
+      return;
+    }
+    const lat = toNum(location.latitude || location.lat);
+    const lng = toNum(location.longitude || location.lng);
+    const deviceId = location.device_id || location.deviceId || '-';
+    const timestamp = location.timestamp || location.updated_at || new Date().toISOString();
+    const coordText = lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 'No coordinates';
+    adminLatestLocationEl.innerHTML = `<div style="font-size:0.7rem;color:var(--text);padding:8px;">
+      <div style="margin-bottom:4px;"><strong>${escapeHtml(shortDeviceId(deviceId))}</strong></div>
+      <div style="color:var(--muted);">${escapeHtml(coordText)}</div>
+      <div style="color:var(--muted);font-size:0.65rem;margin-top:2px;">${escapeHtml(fmtTime(timestamp))}</div>
+    </div>`;
+  }
+
+  function renderAdminCommandsPanel() {
+    if (!adminCommandsListEl) return;
+    const commands = lastAdminData.commands || [];
+    if (!commands.length) {
+      adminCommandsListEl.innerHTML = '<div style="color:var(--muted);font-size:0.75rem;padding:8px;">No recent commands</div>';
+      return;
+    }
+    adminCommandsListEl.innerHTML = commands.slice(0, 8).map((cmd, idx) => {
+      const action = cmd.action || cmd.type || 'unknown';
+      const status = cmd.status || 'pending';
+      const statusColor = status === 'success' ? '#4CAF50' : (status === 'error' ? '#f44336' : '#FF9800');
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.65rem;border-bottom:1px solid rgba(0,170,255,0.1);">
+        <span>${escapeHtml(String(action).slice(0, 16))}</span>
+        <span style="background:${statusColor};color:#fff;padding:2px 6px;border-radius:3px;font-weight:bold;font-size:0.6rem;">${escapeHtml(String(status).slice(0, 5).toUpperCase())}</span>
+      </div>`;
+    }).join('');
+  }
+
   function setTrackingHint(message, isError = false) {
     if (!trackingMapHintEl) return;
     trackingMapHintEl.textContent = message;
@@ -2003,6 +2112,9 @@
   }
 
   initializeTrackingPanelUi();
+  renderAdminUsersPanel();
+  renderAdminLocationsPanel();
+  renderAdminCommandsPanel();
   setTimeout(() => {
     markPanelLoaded('gps');
     markPanelLoaded('mobile');
@@ -3322,6 +3434,121 @@
     if (cameraRecordingLastActionEl) {
       cameraRecordingLastActionEl.textContent = lastRecordingActionLabel;
     }
+  }
+
+  function normalizeAdminRows(payload, primaryKey) {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload[primaryKey])) return payload[primaryKey];
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.items)) return payload.items;
+    if (Array.isArray(payload.results)) return payload.results;
+    return [];
+  }
+
+  function formatAdminLocationText(location) {
+    if (!location) return 'Unavailable';
+    const userId = location.user_id || location.userId || location.device_id || location.deviceId || 'unknown';
+    const lat = location.latitude ?? location.lat;
+    const lng = location.longitude ?? location.lng;
+    const seen = location.last_seen || location.lastSeen || location.updated_at || location.updatedAt || '';
+    const point = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+      ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
+      : 'No coordinates';
+    const suffix = seen ? ` @ ${new Date(seen).toLocaleTimeString()}` : '';
+    return `${userId}: ${point}${suffix}`;
+  }
+
+  function renderAdminSidebar() {
+    if (adminUsersCountEl) {
+      adminUsersCountEl.textContent = String(lastAdminData.users.length);
+    }
+    if (adminUsersListEl) {
+      if (!lastAdminData.users.length) {
+        adminUsersListEl.innerHTML = '<div style="font-size:.66rem;color:var(--muted)">No admin users returned</div>';
+      } else {
+        adminUsersListEl.innerHTML = lastAdminData.users.slice(0, 4).map((user) => {
+          const userId = escapeHtml(String(user.user_id || user.userId || 'unknown'));
+          const queued = Number(user.queued || 0);
+          const lastSeen = user.last_seen_at || user.lastSeenAt || user.last_seen || user.lastSeen || null;
+          const lastSeenLabel = lastSeen ? new Date(lastSeen).toLocaleTimeString() : 'No last seen';
+          return `<div style="font-size:.68rem;color:var(--text);display:flex;justify-content:space-between;gap:8px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${userId}</span><span style="color:var(--muted)">queued ${queued} • ${escapeHtml(lastSeenLabel)}</span></div>`;
+        }).join('');
+      }
+    }
+    if (adminLatestLocationEl) {
+      adminLatestLocationEl.textContent = formatAdminLocationText(lastAdminData.latestLocation);
+    }
+    if (adminCommandsListEl) {
+      if (!lastAdminData.commands.length) {
+        adminCommandsListEl.innerHTML = '<div style="font-size:.66rem;color:var(--muted)">No commands returned</div>';
+      } else {
+        adminCommandsListEl.innerHTML = lastAdminData.commands.slice(0, 4).map((command) => {
+          const action = escapeHtml(String(command.action || 'command'));
+          const userId = escapeHtml(String(command.user_id || command.userId || 'unknown'));
+          const status = escapeHtml(String(command.status || 'queued'));
+          return `<div style="font-size:.67rem;color:var(--text)">${action} • ${userId} • ${status}</div>`;
+        }).join('');
+      }
+    }
+    if (adminResponsesListEl) {
+      if (!lastAdminData.responses.length) {
+        adminResponsesListEl.innerHTML = '<div style="font-size:.66rem;color:var(--muted)">No responses returned</div>';
+      } else {
+        adminResponsesListEl.innerHTML = lastAdminData.responses.slice(0, 4).map((response) => {
+          const action = escapeHtml(String(response.action || 'response'));
+          const userId = escapeHtml(String(response.user_id || response.userId || 'unknown'));
+          const status = escapeHtml(String(response.status || 'unknown'));
+          return `<div style="font-size:.67rem;color:var(--text)">${action} • ${userId} • ${status}</div>`;
+        }).join('');
+      }
+    }
+    if (adminDataStatusEl) {
+      adminDataStatusEl.textContent = lastAdminData.status;
+    }
+  }
+
+  async function refreshAdminSidebar() {
+    if (!backendApi) {
+      lastAdminData = {
+        users: [],
+        latestLocation: null,
+        commands: [],
+        responses: [],
+        updatedAt: null,
+        status: 'Backend bridge unavailable',
+      };
+      renderAdminSidebar();
+      return;
+    }
+
+    const requests = [
+      backendApi.getAdminUsers ? backendApi.getAdminUsers() : Promise.resolve(null),
+      backendApi.getAdminLocationsLatest ? backendApi.getAdminLocationsLatest() : Promise.resolve(null),
+      backendApi.getAdminCommands ? backendApi.getAdminCommands() : Promise.resolve(null),
+      backendApi.getAdminResponses ? backendApi.getAdminResponses() : Promise.resolve(null),
+    ];
+
+    const [usersResult, locationResult, commandsResult, responsesResult] = await Promise.allSettled(requests);
+    const usersPayload = usersResult.status === 'fulfilled' ? usersResult.value : null;
+    const latestLocationPayload = locationResult.status === 'fulfilled' ? locationResult.value : null;
+    const commandsPayload = commandsResult.status === 'fulfilled' ? commandsResult.value : null;
+    const responsesPayload = responsesResult.status === 'fulfilled' ? responsesResult.value : null;
+
+    lastAdminData = {
+      users: normalizeAdminRows(usersPayload, 'users'),
+      latestLocation: latestLocationPayload && (latestLocationPayload.latest || latestLocationPayload.location || latestLocationPayload.data || latestLocationPayload),
+      commands: normalizeAdminRows(commandsPayload, 'commands'),
+      responses: normalizeAdminRows(responsesPayload, 'responses'),
+      updatedAt: new Date().toLocaleTimeString(),
+      status: `Updated ${new Date().toLocaleTimeString()}`,
+    };
+
+    if (!lastAdminData.users.length && !lastAdminData.latestLocation && !lastAdminData.commands.length && !lastAdminData.responses.length) {
+      lastAdminData.status = 'No admin data returned';
+    }
+
+    renderAdminSidebar();
   }
 
   function attachCameraMediaHandlers() {

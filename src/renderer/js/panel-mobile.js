@@ -59,6 +59,33 @@
     return deviceLayers.get(deviceId);
   }
 
+  function buildDeviceMarkerIcon(color, label, isOnline) {
+    if (!window.L || typeof window.L.divIcon !== 'function') {
+      return null;
+    }
+
+    var safeLabel = String(label || '?').trim().charAt(0).toUpperCase() || '?';
+    var stroke = isOnline ? '#ffffff' : 'rgba(255,255,255,0.78)';
+    var glow = isOnline ? '0 0 18px rgba(0, 170, 255, 0.42)' : '0 0 14px rgba(255, 78, 104, 0.28)';
+    var html = ''
+      + '<div style="width:34px;height:34px;position:relative;transform:translate(-50%, -100%);filter:' + glow + ';">'
+      +   '<svg viewBox="0 0 34 46" width="34" height="46" style="display:block;overflow:visible">'
+      +     '<path d="M17 1.5c-8.6 0-15.5 6.7-15.5 15 0 11.5 15.5 28 15.5 28s15.5-16.5 15.5-28c0-8.3-6.9-15-15.5-15z" fill="' + color + '" stroke="' + stroke + '" stroke-width="2.2"/>'
+      +     '<circle cx="17" cy="17" r="7.3" fill="rgba(3, 13, 27, 0.95)" stroke="' + stroke + '" stroke-width="2"/>'
+      +     '<circle cx="17" cy="17" r="3.1" fill="' + stroke + '"/>'
+      +   '</svg>'
+      +   '<div style="position:absolute;left:50%;top:11px;transform:translateX(-50%);width:18px;height:18px;border-radius:999px;display:flex;align-items:center;justify-content:center;color:' + stroke + ';font-size:10px;font-weight:800;line-height:1;">' + safeLabel + '</div>'
+      + '</div>';
+
+    return window.L.divIcon({
+      className: 'piguard-device-marker',
+      html: html,
+      iconSize: [34, 46],
+      iconAnchor: [17, 44],
+      popupAnchor: [0, -38]
+    });
+  }
+
   function initMap() {
     if (map) { return map; }
     var el = getEl("mobile-map");
@@ -76,6 +103,19 @@
       console.warn("[Panel] mobile-map already initialized");
       return null;
     }
+    
+    // Initialize deviceLayers if not already done
+    if (deviceLayers.size === 0) {
+      // Add initial device layers when map loads
+      devices.forEach(function(device) {
+        if (!deviceLayers.has(device.deviceId)) {
+          var idx = deviceLayers.size;
+          var color = colorFromIndex(idx);
+          deviceLayers.set(device.deviceId, { color: color, marker: null, routeLine: null, routePoints: [] });
+        }
+      });
+    }
+    
     try {
       map = window.L.map("mobile-map").setView([14.5995, 120.9842], 12);
       window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
@@ -144,13 +184,19 @@
     layer.routePoints = [point];
 
     if (!layer.marker) {
-      layer.marker = window.L.circleMarker(point, { radius: 8, color: layer.color, weight: 2, fillColor: layer.color, fillOpacity: 0.9 }).addTo(m);
+      var markerLabel = friendlyName(device.deviceId);
+      var markerIcon = buildDeviceMarkerIcon(layer.color, markerLabel, isDeviceOnline(device));
+      if (markerIcon) {
+        layer.marker = window.L.marker(point, { icon: markerIcon, riseOnHover: true }).addTo(m);
+      } else {
+        layer.marker = window.L.circleMarker(point, { radius: 10, color: '#ffffff', weight: 2, fillColor: layer.color, fillOpacity: 1 }).addTo(m);
+      }
     } else {
       layer.marker.setLatLng(point);
     }
 
     if (layer.marker) {
-      layer.marker.bindPopup("<strong>" + friendlyName(device.deviceId) + "</strong><br/>Device: " + device.deviceId + "<br/>Lat: " + lat.toFixed(6) + "<br/>Lng: " + lng.toFixed(6) + "<br/>Seen: " + lastSeenText(device.lastSeen));
+      layer.marker.bindPopup("<div style='min-width:160px'><strong>" + friendlyName(device.deviceId) + "</strong><br/>Device: " + device.deviceId + "<br/>Lat: " + lat.toFixed(6) + "<br/>Lng: " + lng.toFixed(6) + "<br/>Seen: " + lastSeenText(device.lastSeen) + "</div>");
     }
   }
 
@@ -194,7 +240,7 @@
           + "<div class=\"tracking-device-actions\">"
           + "<button type=\"button\" class=\"tracking-action-btn tracking-action-toggle\" data-action=\"toggle_actions\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;width:100%;\">Actions " + (isExpanded ? "&#9650;" : "&#9660;") + "</button>"
           + "<div class=\"tracking-device-dropdown\" style=\"margin-top:6px;display:" + (isExpanded ? "grid" : "none") + ";gap:6px;\">"
-          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"record_video\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Send Record Command</button>"
+          + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"start_recording\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Send Record Command</button>"
           + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_sms\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show SMS</button>"
           + "<button type=\"button\" class=\"tracking-action-btn\" data-action=\"show_logs\" data-device-id=\"" + device.deviceId + "\" style=\"display:block;\">Show Logs</button>"
           + "</div>"
@@ -357,7 +403,7 @@
           return;
         }
         if (deviceId && window.electronAPI && typeof window.electronAPI.invoke === "function") {
-          if (action === 'show_camera' || action === 'record_video') {
+          if (action === 'show_camera' || action === 'start_recording') {
             openCameraModal(deviceId);
             return;
           } else {
@@ -391,7 +437,316 @@
     }).catch(function () { backendHttpBaseUrl = ''; });
   }
 
-  var cameraModalState = { deviceId: '', lastVideoUrl: '', lastImageUrl: '', toastTimer: null };
+  var cameraModalState = { deviceId: '', lastVideoUrl: '', lastImageUrl: '', toastTimer: null, recordWatchTimer: null, recordWatchDeadline: 0, recordWatchStartedAt: 0, recordWatchSeenKeys: {} };
+
+  function stopRecordWatch() {
+    if (cameraModalState.recordWatchTimer) {
+      clearInterval(cameraModalState.recordWatchTimer);
+      cameraModalState.recordWatchTimer = null;
+    }
+    cameraModalState.recordWatchDeadline = 0;
+    cameraModalState.recordWatchStartedAt = 0;
+    cameraModalState.recordWatchSeenKeys = {};
+  }
+
+  function parseTimestampMs(value) {
+    if (value == null) return 0;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value > 1e12 ? value : value * 1000;
+    }
+    var parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function buildVideoSignature(row) {
+    if (!row || typeof row !== 'object') return '';
+    var parts = [
+      row.id,
+      row.file_id,
+      row.fileId,
+      row.object_key,
+      row.objectKey,
+      row.storage_key,
+      row.storageKey,
+      row.key,
+      row.name,
+      row.file_name,
+      row.filename,
+      row.path,
+      row.file_path,
+      row.url,
+      row.file_url,
+      row.public_url,
+      row.publicUrl,
+      row.download_url,
+      row.downloadUrl,
+      row.relative_path,
+      row.relativePath,
+      row.size,
+      row.file_size,
+      row.bytes,
+      row.length,
+      row.content_length,
+      row.modified_at,
+      row.updated_at,
+      row.created_at,
+      row.uploaded_at,
+      row.timestamp
+    ];
+    return parts.map(function (value) { return String(value == null ? '' : value).trim(); }).filter(Boolean).join('|');
+  }
+
+  function toAbsoluteBackendUrl(raw) {
+    var base = String(backendHttpBaseUrl || '').trim().replace(/\/+$/, '');
+    var value = String(raw || '').trim();
+    if (!value) return '';
+    if (/^https?:\/\//i.test(value) || value.indexOf('data:') === 0) {
+      return value;
+    }
+    if (!base) return '';
+    return base + '/' + value.replace(/^\/+/, '');
+  }
+
+  function normalizeAdminFileRows(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object') return [];
+    if (Array.isArray(payload.files)) return payload.files;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
+  }
+
+  function getRowFileName(row) {
+    return String(
+      row && (row.name || row.file_name || row.filename || row.file || row.object_name || row.objectName) || ''
+    ).trim();
+  }
+
+  function getRowRawUrl(row) {
+    if (!row || typeof row !== 'object') return '';
+    return String(
+      row.url
+      || row.file_url
+      || row.public_url
+      || row.publicUrl
+      || row.download_url
+      || row.downloadUrl
+      || row.path
+      || row.file_path
+      || row.relative_path
+      || row.relativePath
+      || row.object_key
+      || row.objectKey
+      || row.storage_key
+      || row.storageKey
+      || ''
+    ).trim();
+  }
+
+  function isVideoPathLike(value) {
+    var text = String(value || '').toLowerCase();
+    return /(\.mp4|\.mov|\.m4v|\.webm|\.mkv|\.avi)(\?|#|$)/.test(text);
+  }
+
+  function rowMatchesDevice(row, deviceId) {
+    var target = String(deviceId || '').trim().toLowerCase();
+    if (!target) return true;
+    if (!row || typeof row !== 'object') return false;
+
+    var explicitIds = [
+      row.device_id,
+      row.deviceId,
+      row.target_device_id,
+      row.targetDeviceId,
+      row.user_id,
+      row.userId
+    ].map(function (value) { return String(value || '').trim().toLowerCase(); }).filter(Boolean);
+    if (explicitIds.indexOf(target) >= 0) return true;
+
+    var name = getRowFileName(row).toLowerCase();
+    var url = getRowRawUrl(row).toLowerCase();
+    return name.indexOf(target) >= 0 || url.indexOf(target) >= 0;
+  }
+
+  function pickLatestVideoFile(rows, deviceId) {
+    var videos = rows.filter(function (row) {
+      if (!row || typeof row !== 'object') return false;
+      if (!rowMatchesDevice(row, deviceId)) return false;
+      var name = getRowFileName(row).toLowerCase();
+      var url = getRowRawUrl(row).toLowerCase();
+      return /\.(mp4|mov|m4v|webm|mkv|avi)$/.test(name) || isVideoPathLike(url);
+    });
+
+    if (!videos.length) {
+      videos = rows.filter(function (row) {
+        if (!row || typeof row !== 'object') return false;
+        var name = getRowFileName(row).toLowerCase();
+        var url = getRowRawUrl(row).toLowerCase();
+        return /\.(mp4|mov|m4v|webm|mkv|avi)$/.test(name) || isVideoPathLike(url);
+      });
+    }
+
+    if (!videos.length) {
+      videos = rows.filter(function (row) {
+        return row && typeof row === 'object';
+      });
+    }
+
+    if (!videos.length) return null;
+
+    videos.sort(function (a, b) {
+      var aTs = parseTimestampMs(a.modified_at || a.updated_at || a.created_at || a.uploaded_at || a.timestamp);
+      var bTs = parseTimestampMs(b.modified_at || b.updated_at || b.created_at || b.uploaded_at || b.timestamp);
+      return bTs - aTs;
+    });
+
+    var latest = videos[0];
+    var name = getRowFileName(latest);
+    var rawUrl = getRowRawUrl(latest);
+    var url = toAbsoluteBackendUrl(rawUrl);
+    if (!url && name) {
+      url = toAbsoluteBackendUrl('captured_video/' + name);
+    }
+
+    if (!url) return null;
+
+    var ts = parseTimestampMs(latest.modified_at || latest.updated_at || latest.created_at || latest.uploaded_at || latest.timestamp);
+    var signature = buildVideoSignature(latest) || (name || url);
+    return {
+      key: signature + '|' + String(ts || 0),
+      name: name,
+      url: url,
+      timestamp: ts,
+    };
+  }
+
+  function isNewRecordedVideo(meta) {
+    if (!meta || !meta.key) return false;
+    if (cameraModalState.recordWatchSeenKeys[meta.key]) return false;
+    cameraModalState.recordWatchSeenKeys[meta.key] = true;
+    return true;
+  }
+
+  function isRecordedMetaReady(meta, baselineMeta) {
+    if (!meta) return false;
+
+    var baselineKey = baselineMeta && baselineMeta.key ? String(baselineMeta.key) : '';
+    var baselineTs = baselineMeta && Number.isFinite(baselineMeta.timestamp) ? Number(baselineMeta.timestamp) : 0;
+    var metaTs = Number.isFinite(meta.timestamp) ? Number(meta.timestamp) : 0;
+    var watchStart = Number(cameraModalState.recordWatchStartedAt || 0);
+
+    // If we could not read a baseline key, accept a fresh-enough result from this watch window.
+    if (!baselineKey) {
+      if (metaTs > 0 && watchStart > 0) {
+        return metaTs >= (watchStart - 10000);
+      }
+      return true;
+    }
+
+    // Different key means a new uploaded recording.
+    if (meta.key !== baselineKey) {
+      return true;
+    }
+
+    // Same key may still be a new recording if backend overwrote the same file.
+    if (metaTs > 0 && baselineTs > 0) {
+      return metaTs > baselineTs;
+    }
+
+    if (metaTs > 0 && watchStart > 0) {
+      return metaTs >= (watchStart - 10000);
+    }
+
+    return false;
+  }
+
+  function fetchAdminFilesRows(folder) {
+    var base = String(backendHttpBaseUrl || '').trim().replace(/\/+$/, '');
+    if (!base || typeof fetch !== 'function') {
+      return Promise.resolve([]);
+    }
+
+    var token = 'C9EQlRRiBTWUCltF6yGBKIT0NXuW3OgZ';
+    var url = base + '/api/admin/files';
+    if (folder) {
+      url += '?folder=' + encodeURIComponent(String(folder));
+    }
+
+    return fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      }
+    }).then(function (response) {
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+      }
+      return response.json();
+    }).then(function (payload) {
+      return normalizeAdminFileRows(payload);
+    }).catch(function () {
+      return [];
+    });
+  }
+
+  function fetchLatestRecordedVideoMeta() {
+    var base = String(backendHttpBaseUrl || '').trim().replace(/\/+$/, '');
+    if (!base || typeof fetch !== 'function') {
+      return Promise.resolve(null);
+    }
+
+    var folders = ['captured_video', 'recordings', 'uploads', ''];
+    var idx = 0;
+
+    function next() {
+      if (idx >= folders.length) return Promise.resolve(null);
+      var folder = folders[idx++];
+      return fetchAdminFilesRows(folder).then(function (rows) {
+        var meta = pickLatestVideoFile(rows, cameraModalState.deviceId);
+        if (meta) return meta;
+        return next();
+      });
+    }
+
+    return next();
+  }
+
+  function startRecordWatch(baselineMeta) {
+    stopRecordWatch();
+
+    cameraModalState.recordWatchStartedAt = Date.now();
+    cameraModalState.recordWatchSeenKeys = {};
+    cameraModalState.recordWatchDeadline = Date.now() + 180000;
+
+    var tick = function () {
+      if (Date.now() > cameraModalState.recordWatchDeadline) {
+        stopRecordWatch();
+        var status = document.getElementById('cameraModalRecordedStatus');
+        if (status && !cameraModalState.lastVideoUrl) {
+          status.textContent = 'Recorded Video: still waiting for upload. Try sending again if needed.';
+        }
+        return;
+      }
+
+      fetchLatestRecordedVideoMeta().then(function (meta) {
+        if (!meta) return;
+
+        if (!isRecordedMetaReady(meta, baselineMeta)) {
+          if (meta.key) {
+            isNewRecordedVideo(meta);
+          }
+          return;
+        }
+
+        if (!isNewRecordedVideo(meta)) return;
+        setCameraModalVideo(meta.url, meta.name || 'recording.mp4');
+        stopRecordWatch();
+      });
+    };
+
+    tick();
+    cameraModalState.recordWatchTimer = setInterval(tick, 1500);
+  }
 
   /* Camera modal UI */
   function createCameraModal() {
@@ -403,10 +758,13 @@
     modal.style.top = '0';
     modal.style.width = '100%';
     modal.style.height = '100%';
+    modal.style.padding = '24px';
+    modal.style.boxSizing = 'border-box';
     modal.style.background = 'rgba(3, 8, 18, 0.72)';
     modal.style.display = 'none';
     modal.style.alignItems = 'center';
     modal.style.justifyContent = 'center';
+    modal.style.overflow = 'auto';
     modal.style.zIndex = '9999';
 
     if (!document.getElementById('cameraModalStyles')) {
@@ -436,11 +794,22 @@
         + '66% { content: ".."; }'
         + '100% { content: "..."; }'
         + '}'
-        + '.camera-modal-frame { width: 92%; max-width: 940px; max-height: 90vh; overflow: hidden; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }'
+        + '.camera-modal-frame { width: min(1120px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow: auto; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); background: linear-gradient(180deg, rgba(8, 26, 46, 0.98), rgba(6, 18, 34, 0.98)); border: 1px solid rgba(98, 168, 255, 0.28); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.62), inset 0 1px 0 rgba(255,255,255,0.04); position: relative; }'
+        + '.camera-modal-frame::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at top right, rgba(0, 170, 255, 0.14), transparent 32%), radial-gradient(circle at bottom left, rgba(115, 232, 255, 0.08), transparent 30%); }'
+        + '.camera-modal-frame > * { position: relative; z-index: 1; }'
         + '.camera-modal-frame .cam-cell { min-height: 50px; border-radius: 14px; overflow: hidden; }'
         + '#cameraModal .camera-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }'
         + '#cameraModal .camera-media-block { display: grid; gap: 8px; min-width: 0; }'
-        + '#cameraModal .camera-media-block .cam-cell { aspect-ratio: 16 / 8; min-height: 96px; max-height: 210px; }'
+        + '#cameraModal .camera-media-block.is-full { grid-column: 1 / -1; }'
+        + '#cameraModal .camera-result-card { background: rgba(9, 25, 43, 0.88); border: 1px solid rgba(102, 172, 255, 0.2); border-radius: 16px; padding: 14px; display: grid; gap: 10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03); }'
+        + '#cameraModal .camera-result-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }'
+        + '#cameraModal .camera-result-title { display: flex; flex-direction: column; gap: 2px; }'
+        + '#cameraModal .camera-result-title .label { color: #8ccfff; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }'
+        + '#cameraModal .camera-result-title .value { color: #f3f8ff; font-size: 14px; font-weight: 800; }'
+        + '#cameraModal .camera-result-status { color: #95a8bd; font-size: 12px; }'
+        + '#cameraModal .camera-result-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }'
+        + '#cameraModal .camera-result-preview { display: none; }'
+        + '#cameraModal .camera-result-card.is-ready .camera-result-preview { display: block; }'
         + '#cameraModal .cam-cell.is-offline { animation: cameraOfflinePulse 2.3s ease-in-out infinite; }'
         + '#cameraModal .cam-dot { background: #ff4e68; animation: cameraLiveDot 1.6s ease-in-out infinite; }'
         + '#cameraModal .cam-status.offline { background: rgba(255, 78, 104, 0.14); color: #ffd7de; border: 1px solid rgba(255, 78, 104, 0.35); border-radius: 999px; padding: 2px 9px; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; font-weight: 700; }'
@@ -455,29 +824,36 @@
         + '#cameraModal #cameraModalSend, #cameraModal #cameraModalCapture { display: inline-flex; align-items: center; gap: 8px; border-radius: 10px; font-weight: 700; border: 1px solid rgba(122, 232, 255, 0.35); background: linear-gradient(120deg, #0077ff, #00aaff 62%, #72f1ff); color: #031a2f; box-shadow: 0 10px 26px rgba(0, 153, 255, 0.28); }'
         + '#cameraModal #cameraModalSend:hover, #cameraModal #cameraModalCapture:hover { transform: translateY(-1px); filter: brightness(1.05); }'
         + '#cameraModal #cameraModalCapturedStatus, #cameraModal #cameraModalRecordedStatus { box-shadow: inset 0 0 0 1px rgba(0, 170, 255, 0.08), 0 8px 18px rgba(0, 0, 0, 0.25); }'
+        + '#cameraModal .camera-summary-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 2px; }'
+        + '#cameraModal .camera-summary-chip { display: flex; flex-direction: column; gap: 2px; background: rgba(9, 25, 43, 0.9); border: 1px solid rgba(102, 172, 255, 0.2); border-radius: 12px; padding: 10px 12px; }'
+        + '#cameraModal .camera-summary-chip .label { color: #8ccfff; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }'
+        + '#cameraModal .camera-summary-chip .value { color: #f3f8ff; font-size: 13px; font-weight: 700; }'
+        + '#cameraModal .camera-summary-chip .subtle { color: #95a8bd; font-size: 11px; }'
         + '@media (max-width: 900px) {'
-        + '.camera-modal-frame { width: 94%; padding: 12px; max-height: 90vh; overflow: auto; }'
+        + '.camera-modal-frame { width: calc(100vw - 20px); padding: 12px; max-height: calc(100vh - 20px); overflow: auto; }'
+        + '#cameraModal { padding: 10px; align-items: flex-start; }'
         + '#cameraModal .camera-media-grid { grid-template-columns: 1fr; }'
+        + '#cameraModal .camera-summary-strip { grid-template-columns: 1fr; }'
         + '.camera-modal-frame .cam-cell { min-height: 50px; }'
         + '}';
-      styleEl.textContent += '@media (max-height: 820px) { .camera-modal-frame { max-height: 90vh; overflow: auto; } }';
+      styleEl.textContent += '@media (max-height: 820px) { .camera-modal-frame { max-height: calc(100vh - 24px); overflow: auto; } }';
       document.head.appendChild(styleEl);
     }
 
     var frame = document.createElement('div');
     frame.className = 'camera-modal-frame';
-    frame.style.width = '88%';
-    frame.style.maxWidth = '780px';
-    frame.style.maxHeight = '86vh';
-    frame.style.overflow = 'hidden';
+    frame.style.width = 'min(1120px, calc(100vw - 48px))';
+    frame.style.maxWidth = '1120px';
+    frame.style.maxHeight = 'calc(100vh - 48px)';
+    frame.style.overflow = 'auto';
     frame.style.background = 'linear-gradient(180deg, var(--card-bg), var(--surface-1))';
     frame.style.border = '1px solid var(--card-border)';
-    frame.style.padding = '12px';
-    frame.style.borderRadius = '10px';
-    frame.style.boxShadow = '0 10px 40px rgba(0,0,0,0.6)';
+    frame.style.padding = '16px';
+    frame.style.borderRadius = '18px';
+    frame.style.boxShadow = '0 18px 50px rgba(0,0,0,0.62)';
     frame.style.display = 'flex';
     frame.style.flexDirection = 'column';
-    frame.style.gap = '10px';
+    frame.style.gap = '12px';
 
     var header = document.createElement('div');
     header.style.display = 'flex';
@@ -509,6 +885,61 @@
 
     header.appendChild(title);
     header.appendChild(closeWrap);
+
+    var summaryStrip = document.createElement('div');
+    summaryStrip.className = 'camera-summary-strip';
+
+    var summaryDevice = document.createElement('div');
+    summaryDevice.className = 'camera-summary-chip';
+    var summaryDeviceLabel = document.createElement('div');
+    summaryDeviceLabel.className = 'label';
+    summaryDeviceLabel.textContent = 'Device';
+    var summaryDeviceValue = document.createElement('div');
+    summaryDeviceValue.id = 'cameraModalSummaryDevice';
+    summaryDeviceValue.className = 'value';
+    summaryDeviceValue.textContent = 'Waiting for selection';
+    var summaryDeviceSub = document.createElement('div');
+    summaryDeviceSub.className = 'subtle';
+    summaryDeviceSub.textContent = 'Modal stays local to this device.';
+    summaryDevice.appendChild(summaryDeviceLabel);
+    summaryDevice.appendChild(summaryDeviceValue);
+    summaryDevice.appendChild(summaryDeviceSub);
+
+    var summaryMode = document.createElement('div');
+    summaryMode.className = 'camera-summary-chip';
+    var summaryModeLabel = document.createElement('div');
+    summaryModeLabel.className = 'label';
+    summaryModeLabel.textContent = 'Mode';
+    var summaryModeValue = document.createElement('div');
+    summaryModeValue.id = 'cameraModalSummaryMode';
+    summaryModeValue.className = 'value';
+    summaryModeValue.textContent = 'Record + Capture';
+    var summaryModeSub = document.createElement('div');
+    summaryModeSub.className = 'subtle';
+    summaryModeSub.textContent = 'Upload watcher is active.';
+    summaryMode.appendChild(summaryModeLabel);
+    summaryMode.appendChild(summaryModeValue);
+    summaryMode.appendChild(summaryModeSub);
+
+    var summaryState = document.createElement('div');
+    summaryState.className = 'camera-summary-chip';
+    var summaryStateLabel = document.createElement('div');
+    summaryStateLabel.className = 'label';
+    summaryStateLabel.textContent = 'State';
+    var summaryStateValue = document.createElement('div');
+    summaryStateValue.id = 'cameraModalSummaryState';
+    summaryStateValue.className = 'value';
+    summaryStateValue.textContent = 'Idle';
+    var summaryStateSub = document.createElement('div');
+    summaryStateSub.className = 'subtle';
+    summaryStateSub.textContent = 'Ready to send command.';
+    summaryState.appendChild(summaryStateLabel);
+    summaryState.appendChild(summaryStateValue);
+    summaryState.appendChild(summaryStateSub);
+
+    summaryStrip.appendChild(summaryDevice);
+    summaryStrip.appendChild(summaryMode);
+    summaryStrip.appendChild(summaryState);
 
     var settings = document.createElement('div');
     settings.style.display = 'grid';
@@ -563,52 +994,10 @@
     settings.appendChild(facingWrap);
     settings.appendChild(durationWrap);
 
-    var videoStage = document.createElement('div');
-    videoStage.id = 'cameraModalVideoStage';
-    videoStage.className = 'cam-cell is-offline';
-    videoStage.style.minHeight = '96px';
-    videoStage.style.maxHeight = '210px';
-
-    var videoFeed = document.createElement('div');
-    videoFeed.className = 'cam-feed';
-
-    var videoPlaceholder = document.createElement('div');
-    videoPlaceholder.className = 'cam-placeholder';
-    videoPlaceholder.textContent = 'Waiting for the request';
-
-    var videoOverlay = document.createElement('div');
-    videoOverlay.className = 'cam-overlay';
-
-    var videoCorner = document.createElement('div');
-    videoCorner.className = 'cam-corner';
-    var videoDot = document.createElement('span');
-    videoDot.className = 'cam-dot';
-    videoCorner.appendChild(videoDot);
-
-    var videoLabel = document.createElement('div');
-    videoLabel.className = 'cam-label';
-    var videoName = document.createElement('div');
-    videoName.className = 'cam-name';
-    videoName.textContent = 'Video feed';
-    var videoStatus = document.createElement('div');
-    videoStatus.className = 'cam-status offline';
-    videoStatus.textContent = 'offline';
-    videoLabel.appendChild(videoName);
-    videoLabel.appendChild(videoStatus);
-
-    videoFeed.appendChild(videoPlaceholder);
-    videoStage.appendChild(videoFeed);
-    videoStage.appendChild(videoOverlay);
-    videoStage.appendChild(videoCorner);
-    videoStage.appendChild(videoLabel);
-
-    var imgWrap = document.createElement('div');
-    imgWrap.className = 'cam-cell is-offline';
-    imgWrap.style.minHeight = '96px';
-    imgWrap.style.maxHeight = '210px';
-
-    var imgFeed = document.createElement('div');
-    imgFeed.className = 'cam-feed';
+    var placeholder = document.createElement('div');
+    placeholder.id = 'cameraPlaceholder';
+    placeholder.className = 'cam-placeholder';
+    placeholder.textContent = 'Waiting for the request';
 
     var img = document.createElement('img');
     img.id = 'cameraModalImg';
@@ -618,37 +1007,10 @@
     img.style.display = 'none';
     img.alt = 'Camera frame';
 
-    var placeholder = document.createElement('div');
-    placeholder.id = 'cameraPlaceholder';
-    placeholder.className = 'cam-placeholder';
-    placeholder.textContent = 'Waiting for the request';
-
-    var imgOverlay = document.createElement('div');
-    imgOverlay.className = 'cam-overlay';
-
-    var imgCorner = document.createElement('div');
-    imgCorner.className = 'cam-corner';
-    var imgDot = document.createElement('span');
-    imgDot.className = 'cam-dot';
-    imgCorner.appendChild(imgDot);
-
-    var imgLabel = document.createElement('div');
-    imgLabel.className = 'cam-label';
-    var imgName = document.createElement('div');
-    imgName.className = 'cam-name';
-    imgName.textContent = 'Capture frame';
-    var imgStatus = document.createElement('div');
-    imgStatus.className = 'cam-status offline';
-    imgStatus.textContent = 'offline';
-    imgLabel.appendChild(imgName);
-    imgLabel.appendChild(imgStatus);
-
-    imgFeed.appendChild(img);
-    imgFeed.appendChild(placeholder);
-    imgWrap.appendChild(imgFeed);
-    imgWrap.appendChild(imgOverlay);
-    imgWrap.appendChild(imgCorner);
-    imgWrap.appendChild(imgLabel);
+    var captureStatus = document.createElement('div');
+    captureStatus.id = 'cameraModalImageStatus';
+    captureStatus.className = 'cam-status offline';
+    captureStatus.textContent = 'offline';
 
     var capturedStatus = document.createElement('div');
     capturedStatus.id = 'cameraModalCapturedStatus';
@@ -810,9 +1172,45 @@
     videoActions.style.justifyContent = 'flex-end';
     videoActions.appendChild(send);
 
-    videoSection.appendChild(videoStage);
-    videoSection.appendChild(recordedStatus);
-    videoSection.appendChild(videoWrap);
+    var resultCard = document.createElement('div');
+    resultCard.className = 'camera-result-card';
+
+    var resultTop = document.createElement('div');
+    resultTop.className = 'camera-result-top';
+    var resultTitle = document.createElement('div');
+    resultTitle.className = 'camera-result-title';
+    var resultLabel = document.createElement('div');
+    resultLabel.className = 'label';
+    resultLabel.textContent = 'Recording Result';
+    var resultValue = document.createElement('div');
+    resultValue.id = 'cameraModalResultName';
+    resultValue.className = 'value';
+    resultValue.textContent = 'Waiting for upload';
+    var resultSub = document.createElement('div');
+    resultSub.id = 'cameraModalResultSub';
+    resultSub.className = 'camera-result-status';
+    resultSub.textContent = 'The uploaded file will appear here with a download button.';
+    resultTitle.appendChild(resultLabel);
+    resultTitle.appendChild(resultValue);
+    resultTitle.appendChild(resultSub);
+
+    var resultBadge = document.createElement('div');
+    resultBadge.id = 'cameraModalResultBadge';
+    resultBadge.className = 'cam-status offline';
+    resultBadge.textContent = 'offline';
+    resultTop.appendChild(resultTitle);
+    resultTop.appendChild(resultBadge);
+
+    var resultPreview = document.createElement('div');
+    resultPreview.id = 'cameraModalResultPreview';
+    resultPreview.className = 'camera-result-preview';
+
+    resultCard.appendChild(resultTop);
+    resultCard.appendChild(recordedStatus);
+    resultCard.appendChild(videoWrap);
+    resultCard.appendChild(resultPreview);
+
+    videoSection.appendChild(resultCard);
     videoSection.appendChild(videoActions);
 
     var divider = document.createElement('div');
@@ -837,11 +1235,11 @@
     captureActions.style.justifyContent = 'flex-end';
     captureActions.appendChild(capture);
 
-    captureSection.appendChild(imgWrap);
     captureSection.appendChild(capturedStatus);
     captureSection.appendChild(captureActions);
 
     frame.appendChild(header);
+    frame.appendChild(summaryStrip);
     frame.appendChild(settings);
     var mediaGrid = document.createElement('div');
     mediaGrid.className = 'camera-media-grid';
@@ -850,11 +1248,13 @@
     videoBlock.className = 'camera-media-block';
     videoBlock.appendChild(videoLabel);
     videoBlock.appendChild(videoSection);
+    videoBlock.classList.add('is-full');
 
     var captureBlock = document.createElement('div');
     captureBlock.className = 'camera-media-block';
     captureBlock.appendChild(captureLabel);
     captureBlock.appendChild(captureSection);
+    captureBlock.classList.add('is-full');
 
     mediaGrid.appendChild(videoBlock);
     mediaGrid.appendChild(captureBlock);
@@ -941,6 +1341,14 @@
     var download = document.getElementById('cameraModalDownload');
     var filename = document.getElementById('cameraModalFilename');
     var recordedStatus = document.getElementById('cameraModalRecordedStatus');
+    var summaryState = document.getElementById('cameraModalSummaryState');
+    var resultCard = document.querySelector('#cameraModal .camera-result-card');
+    var resultBadge = document.getElementById('cameraModalResultBadge');
+    var resultValue = document.getElementById('cameraModalResultName');
+    var resultSub = document.getElementById('cameraModalResultSub');
+    var videoStage = document.getElementById('cameraModalVideoStage');
+    var videoStatus = document.getElementById('cameraModalVideoStatus');
+    var videoPlaceholder = document.querySelector('#cameraModalVideoStage .cam-placeholder');
     if (!videoWrap || !video || !download) { return; }
 
     if (url) {
@@ -953,6 +1361,9 @@
 
       video.src = url;
       videoWrap.style.display = 'block';
+      if (videoStage) { videoStage.classList.remove('is-offline'); videoStage.classList.add('is-online'); }
+      if (videoStatus) { videoStatus.className = 'cam-status online'; videoStatus.textContent = 'online'; }
+      if (videoPlaceholder) { videoPlaceholder.textContent = 'Recorded video ready'; }
       download.href = url;
       download.setAttribute('download', '');
       download.style.display = 'inline-flex';
@@ -962,6 +1373,22 @@
       }
       if (recordedStatus) {
         recordedStatus.textContent = name ? ('Recorded Video: ' + name) : 'Recorded Video: ready';
+      }
+      if (resultCard) {
+        resultCard.classList.add('is-ready');
+      }
+      if (resultBadge) {
+        resultBadge.className = 'cam-status online';
+        resultBadge.textContent = 'online';
+      }
+      if (resultValue) {
+        resultValue.textContent = name ? name : 'Recording ready';
+      }
+      if (resultSub) {
+        resultSub.textContent = 'The recorded file is ready. Use the download button below.';
+      }
+      if (summaryState) {
+        summaryState.textContent = 'Recording ready';
       }
       if (cameraModalState.lastVideoUrl !== url) {
         cameraModalState.lastVideoUrl = url;
@@ -973,6 +1400,9 @@
     video.removeAttribute('src');
     video.load();
     videoWrap.style.display = 'none';
+    if (videoStage) { videoStage.classList.remove('is-online'); videoStage.classList.add('is-offline'); }
+    if (videoStatus) { videoStatus.className = 'cam-status offline'; videoStatus.textContent = 'offline'; }
+    if (videoPlaceholder) { videoPlaceholder.textContent = 'Waiting for the request'; }
     download.removeAttribute('href');
     download.style.display = 'none';
     if (filename) {
@@ -981,6 +1411,22 @@
     }
     if (recordedStatus) {
       recordedStatus.textContent = 'Recorded Video: waiting for upload...';
+    }
+    if (resultCard) {
+      resultCard.classList.remove('is-ready');
+    }
+    if (resultBadge) {
+      resultBadge.className = 'cam-status offline';
+      resultBadge.textContent = 'offline';
+    }
+    if (resultValue) {
+      resultValue.textContent = 'Waiting for upload';
+    }
+    if (resultSub) {
+      resultSub.textContent = 'The uploaded file will appear here with a download button.';
+    }
+    if (summaryState) {
+      summaryState.textContent = 'Idle';
     }
     cameraModalState.lastVideoUrl = '';
   }
@@ -991,6 +1437,9 @@
     var imageDownload = document.getElementById('cameraModalImageDownload');
     var imageName = document.getElementById('cameraModalImageName');
     var capturedLabel = document.getElementById('cameraModalCapturedLabel');
+    var summaryState = document.getElementById('cameraModalSummaryState');
+    var imageWrap = img && img.parentNode && img.parentNode.parentNode ? img.parentNode.parentNode : null;
+    var imageStatus = document.getElementById('cameraModalImageStatus');
 
     if (!img || !imageDownload) { return; }
 
@@ -1005,6 +1454,8 @@
       img.src = url;
       img.style.display = 'block';
       if (placeholder) { placeholder.style.display = 'none'; }
+      if (imageWrap) { imageWrap.classList.remove('is-offline'); imageWrap.classList.add('is-online'); }
+      if (imageStatus) { imageStatus.className = 'cam-status online'; imageStatus.textContent = 'online'; }
       imageDownload.href = url;
       imageDownload.setAttribute('download', '');
       imageDownload.style.display = 'inline-flex';
@@ -1015,6 +1466,13 @@
       if (capturedLabel) {
         capturedLabel.textContent = name ? ('Captured Image: ' + name) : 'Captured Image: ready';
       }
+      if (imageStatus) {
+        imageStatus.className = 'cam-status online';
+        imageStatus.textContent = 'online';
+      }
+      if (summaryState) {
+        summaryState.textContent = 'Image ready';
+      }
       cameraModalState.lastImageUrl = url;
       return;
     }
@@ -1022,6 +1480,8 @@
     img.removeAttribute('src');
     img.style.display = 'none';
     if (placeholder) { placeholder.style.display = 'block'; }
+    if (imageWrap) { imageWrap.classList.remove('is-online'); imageWrap.classList.add('is-offline'); }
+    if (imageStatus) { imageStatus.className = 'cam-status offline'; imageStatus.textContent = 'offline'; }
     imageDownload.removeAttribute('href');
     imageDownload.style.display = 'none';
     if (imageName) {
@@ -1031,18 +1491,32 @@
     if (capturedLabel) {
       capturedLabel.textContent = 'Captured Image: waiting for capture...';
     }
+    if (imageStatus) {
+      imageStatus.className = 'cam-status offline';
+      imageStatus.textContent = 'offline';
+    }
+    if (summaryState) {
+      summaryState.textContent = 'Idle';
+    }
     cameraModalState.lastImageUrl = '';
   }
 
   function openCameraModal(deviceId) {
     createCameraModal();
+    stopRecordWatch();
     cameraModalState.deviceId = String(deviceId || '').trim();
     var modal = document.getElementById('cameraModal');
     var title = document.getElementById('cameraModalTitle');
+    var summaryDevice = document.getElementById('cameraModalSummaryDevice');
+    var summaryMode = document.getElementById('cameraModalSummaryMode');
+    var summaryState = document.getElementById('cameraModalSummaryState');
     var img = document.getElementById('cameraModalImg');
     var placeholder = document.getElementById('cameraPlaceholder');
     var hint = document.getElementById('cameraModalHint');
     if (title) title.textContent = 'Camera: ' + deviceId;
+    if (summaryDevice) summaryDevice.textContent = deviceId || 'Unknown device';
+    if (summaryMode) summaryMode.textContent = 'Record + Capture';
+    if (summaryState) summaryState.textContent = 'Idle';
     if (img) {
       img.src = ''; // clear
       img.style.display = 'none';
@@ -1066,6 +1540,8 @@
     if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
       return;
     }
+    var device = devices.get(targetId) || null;
+    var targetUserId = device && device.userId ? String(device.userId).trim() : '';
     var facing = 'front';
     var duration = 15;
     var facingSelect = document.getElementById('cameraFacingSelect');
@@ -1077,30 +1553,160 @@
       duration = Math.max(1, Math.min(60, Number(durationInput.value) || 15));
     }
     var placeholder = document.getElementById('cameraPlaceholder');
+    var summaryState = document.getElementById('cameraModalSummaryState');
     if (placeholder) {
       placeholder.textContent = 'Sending record command...';
     }
+    if (summaryState) {
+      summaryState.textContent = 'Sending record command';
+    }
     setCameraModalVideo('');
-    window.electronAPI.invoke('send-command', targetId, 'record_video', {
-      camera: facing,
-      facing: facing,
-      duration: duration,
-      duration_seconds: duration,
-      quality: 0.85,
-      source: 'mobile-panel'
-    }).then(function (result) {
-      if (!placeholder) return;
-      if (result && result.success && result.data && result.data.queued) {
-        placeholder.textContent = 'Record command queued by backend. If mobile is currently active, wait a few seconds for the response.';
-      } else {
-        placeholder.textContent = 'Record command sent. Waiting for the recording payload...';
+
+    fetchLatestRecordedVideoMeta().then(function (baseline) {
+      var baselineMeta = baseline && typeof baseline === 'object' ? baseline : null;
+
+      if (window.backendBridge && typeof window.backendBridge.sendRecordCommand === 'function') {
+        window.backendBridge.sendRecordCommand(
+          targetUserId ? { userId: targetUserId, deviceId: targetId } : { deviceId: targetId },
+          { camera: facing, duration: duration }
+        ).then(function (result) {
+          if (result && result.ok) {
+            var resolvedName = result.device_name || result.device_id || targetId;
+            if (placeholder) {
+              placeholder.textContent = 'Recording request sent to ' + resolvedName + '. Waiting for upload...';
+            }
+          } else {
+            if (placeholder) {
+              placeholder.textContent = 'Recording request sent. Waiting for upload...';
+            }
+          }
+          if (summaryState) {
+            summaryState.textContent = 'Waiting for upload';
+          }
+          startRecordWatch(baselineMeta);
+          console.log('[Panel] Record command sent via backendBridge.sendRecordCommand', result);
+        }).catch(function (err) {
+          var em = err && err.message ? String(err.message) : String(err || '');
+          stopRecordWatch();
+          if (placeholder) placeholder.textContent = 'Failed to send record command: ' + em;
+          if (summaryState) {
+            summaryState.textContent = 'Error';
+          }
+          console.error('[Panel] Failed to send record command via backendBridge:', err);
+        });
+        return;
       }
-    }).catch(function (err) {
+
+      if (backendHttpBaseUrl) {
+      var devicesUrl = backendHttpBaseUrl + '/api/devices';
+      var recordUrl = backendHttpBaseUrl + '/api/record';
+      var token = 'C9EQlRRiBTWUCltF6yGBKIT0NXuW3OgZ';
+      fetch(devicesUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        }
+      }).then(function (response) {
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+        }
+        return response.json();
+      }).then(function (payload) {
+        var rows = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.devices) ? payload.devices : []);
+        var chosen = null;
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i] || {};
+          var rowDeviceId = String(row.device_id || '').trim();
+          if (rowDeviceId === targetId) {
+            chosen = row;
+            break;
+          }
+        }
+        if (!chosen && targetUserId) {
+          var userMatches = [];
+          for (var j = 0; j < rows.length; j++) {
+            var userRow = rows[j] || {};
+            var rowUserId = String(userRow.user_id || '').trim();
+            if (rowUserId === targetUserId) {
+              userMatches.push(userRow);
+            }
+          }
+          if (userMatches.length === 1) {
+            chosen = userMatches[0];
+          }
+        }
+        if (!chosen || !chosen.socket_id) {
+          throw new Error('No connected recording socket found for this device');
+        }
+        return fetch(recordUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+            socket_id: String(chosen.socket_id),
+            camera: facing,
+            duration: duration
+          })
+        }).then(function (response) {
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+          }
+          return response.json().then(function (data) {
+            return { data: data, chosen: chosen };
+          });
+        })
+      }).then(function (result) {
+        var data = result && result.data;
+        var chosen = result && result.chosen;
+        if (data && (data.ok !== false)) {
+          var resolvedName = (chosen && (chosen.device_name || chosen.device_id)) || targetId;
+          if (placeholder) {
+            placeholder.textContent = 'Recording request sent to ' + resolvedName + '. Waiting for upload...';
+          }
+          if (summaryState) {
+            summaryState.textContent = 'Waiting for upload';
+          }
+          startRecordWatch(baselineMeta);
+          console.log('[Panel] Record command sent to backend:', recordUrl, data);
+        } else {
+          stopRecordWatch();
+          if (placeholder) {
+            placeholder.textContent = 'Backend POST failed: ' + (data && (data.message || JSON.stringify(data)) || 'Unknown');
+          }
+          if (summaryState) {
+            summaryState.textContent = 'Error';
+          }
+          console.error('[Panel] Backend POST failed:', data);
+        }
+      }).catch(function (err) {
+        var em = err && err.message ? String(err.message) : String(err || '');
+        stopRecordWatch();
+        if (placeholder) placeholder.textContent = 'Failed to POST record command: ' + em;
+        if (summaryState) {
+          summaryState.textContent = 'Error';
+        }
+        console.error('[Panel] Failed to POST record command:', err);
+      });
+      return;
+      }
+
+      // No backend URL configured — cannot send command safely due to CSP.
+      stopRecordWatch();
+      console.error('[Panel] No backend HTTP base URL available; cannot send record command.');
       if (placeholder) {
-        placeholder.textContent = 'Failed to request recording: ' + (err && err.message ? err.message : err);
+        placeholder.textContent = 'No backend URL configured. Cannot send record command.';
       }
-      console.warn('[Panel] Failed to send record_video:', err && err.message ? err.message : err);
+      return;
     });
+  }
+
+  function sendRecordViaSocket(targetId, facing, duration) {
+    // Legacy helper kept for compatibility; use the current backend command path.
+    console.warn('[Panel] sendRecordViaSocket is deprecated; routing through sendRecordCommand instead.');
+    sendRecordCommand(targetId);
   }
 
   function sendCaptureCommand(deviceId) {
@@ -1109,6 +1715,8 @@
     if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
       return;
     }
+    var device = devices.get(targetId) || null;
+    var targetUserId = device && device.userId ? String(device.userId).trim() : '';
     var facing = 'front';
     var facingSelect = document.getElementById('cameraFacingSelect');
     if (facingSelect && facingSelect.value) {
@@ -1119,7 +1727,7 @@
       placeholder.textContent = 'Sending capture command...';
     }
     setCameraModalImage('');
-    window.electronAPI.invoke('send-command', targetId, 'take_photo', {
+    window.electronAPI.invoke('send-command', targetUserId ? { userId: targetUserId, deviceId: targetId } : targetId, 'take_photo', {
       camera: facing,
       facing: facing,
       quality: 0.9,
@@ -1141,16 +1749,38 @@
 
   function closeCameraModal() {
     var modal = document.getElementById('cameraModal');
+    stopRecordWatch();
     if (modal) modal.style.display = 'none';
   }
 
   // Listen for camera frames from main process
+  function inferMediaKind(action, fileName, filePath, videoUrl, imageUrl) {
+    var act = String(action || '').toLowerCase();
+    var name = String(fileName || '').toLowerCase();
+    var path = String(filePath || '').toLowerCase();
+    var v = String(videoUrl || '').toLowerCase();
+    var i = String(imageUrl || '').toLowerCase();
+
+    if (isVideoPathLike(v) || isVideoPathLike(name) || isVideoPathLike(path)) {
+      return 'video';
+    }
+    if (i || /\.(jpg|jpeg|png|gif|webp)(\?|#|$)/.test(name) || /\.(jpg|jpeg|png|gif|webp)(\?|#|$)/.test(path)) {
+      return 'image';
+    }
+    if (act.indexOf('record') >= 0 || act.indexOf('upload_ready') >= 0 || act.indexOf('video') >= 0) {
+      return 'video';
+    }
+    if (act.indexOf('photo') >= 0 || act.indexOf('image') >= 0 || act.indexOf('frame') >= 0) {
+      return 'image';
+    }
+    return 'unknown';
+  }
+
   if (window.electronAPI && typeof window.electronAPI.on === 'function') {
     window.electronAPI.on('backend:event', function (_event, data) {
       try {
         if (!data || typeof data !== 'object') { return; }
-        var type = data.type;
-        if (type !== 'command_response' && type !== 'device_event') { return; }
+        var type = String(data.type || '').toLowerCase();
 
         var action = String(
           data.action
@@ -1159,34 +1789,59 @@
           || ''
         ).toLowerCase();
 
-        if (type === 'command_response' && action && action !== 'record_video' && action !== 'take_photo' && action !== 'camera_frame') {
+        var hasMediaPayload = !!(
+          (data.data && (data.data.video_url || data.data.videoUrl || data.data.image_url || data.data.imageUrl || data.data.file_url || data.data.fileUrl || data.data.path || data.data.file_path))
+          || (data.result && (data.result.video_url || data.result.videoUrl || data.result.image_url || data.result.imageUrl || data.result.file_url || data.result.fileUrl || data.result.path || data.result.file_path))
+          || (data.payload && (data.payload.video_url || data.payload.videoUrl || data.payload.image_url || data.payload.imageUrl || data.payload.file_url || data.payload.fileUrl || data.payload.path || data.payload.file_path))
+          || (data.payload && data.payload.data && (data.payload.data.video_url || data.payload.data.videoUrl || data.payload.data.image_url || data.payload.data.imageUrl || data.payload.data.file_url || data.payload.data.fileUrl || data.payload.data.path || data.payload.data.file_path))
+          || data.video_url
+          || data.videoUrl
+          || data.image_url
+          || data.imageUrl
+          || data.file_url
+          || data.fileUrl
+        );
+
+        if (type !== 'command_response' && type !== 'device_event' && type !== 'admin:upload_ready' && type !== 'upload_ready' && type !== 'recording_upload' && type !== 'recording:upload_ready' && !hasMediaPayload) {
           return;
         }
 
+        if (type === 'command_response' && action && action !== 'start_recording' && action !== 'take_photo' && action !== 'camera_frame' && action !== 'record' && action !== 'record_video' && action !== 'upload_ready') {
+          if (!hasMediaPayload) {
+            return;
+          }
+        }
+
         var fileName =
-          (data.data && (data.data.file_name || data.data.filename || data.data.file))
-          || (data.result && (data.result.file_name || data.result.filename || data.result.file))
-          || (data.payload && (data.payload.file_name || data.payload.filename || data.payload.file))
+          (data.data && (data.data.file_name || data.data.fileName || data.data.filename || data.data.file))
+          || (data.result && (data.result.file_name || data.result.fileName || data.result.filename || data.result.file))
+          || (data.payload && (data.payload.file_name || data.payload.fileName || data.payload.filename || data.payload.file))
+          || (data.payload && data.payload.data && (data.payload.data.file_name || data.payload.data.fileName || data.payload.data.filename || data.payload.data.file))
           || '';
 
         var filePath =
-          (data.data && (data.data.path || data.data.file_path))
-          || (data.result && (data.result.path || data.result.file_path))
-          || (data.payload && (data.payload.path || data.payload.file_path))
+          (data.data && (data.data.path || data.data.file_path || data.data.filePath))
+          || (data.result && (data.result.path || data.result.file_path || data.result.filePath))
+          || (data.payload && (data.payload.path || data.payload.file_path || data.payload.filePath))
+          || (data.payload && data.payload.data && (data.payload.data.path || data.payload.data.file_path || data.payload.data.filePath))
           || '';
 
         var videoUrl =
-          (data.data && (data.data.video_url || data.data.file_url))
-          || (data.result && (data.result.video_url || data.result.file_url))
-          || (data.payload && (data.payload.video_url || data.payload.file_url))
+          (data.data && (data.data.video_url || data.data.videoUrl || data.data.file_url || data.data.fileUrl))
+          || (data.result && (data.result.video_url || data.result.videoUrl || data.result.file_url || data.result.fileUrl))
+          || (data.payload && (data.payload.video_url || data.payload.videoUrl || data.payload.file_url || data.payload.fileUrl))
+          || (data.payload && data.payload.data && (data.payload.data.video_url || data.payload.data.videoUrl || data.payload.data.file_url || data.payload.data.fileUrl))
           || data.video_url
+          || data.videoUrl
           || '';
 
         var imageUrl =
-          (data.data && (data.data.image_url || data.data.photo_url || data.data.file_url))
-          || (data.result && (data.result.image_url || data.result.photo_url || data.result.file_url))
-          || (data.payload && (data.payload.image_url || data.payload.photo_url || data.payload.file_url))
+          (data.data && (data.data.image_url || data.data.imageUrl || data.data.photo_url || data.data.photoUrl || data.data.file_url || data.data.fileUrl))
+          || (data.result && (data.result.image_url || data.result.imageUrl || data.result.photo_url || data.result.photoUrl || data.result.file_url || data.result.fileUrl))
+          || (data.payload && (data.payload.image_url || data.payload.imageUrl || data.payload.photo_url || data.payload.photoUrl || data.payload.file_url || data.payload.fileUrl))
+          || (data.payload && data.payload.data && (data.payload.data.image_url || data.payload.data.imageUrl || data.payload.data.photo_url || data.payload.data.photoUrl || data.payload.data.file_url || data.payload.data.fileUrl))
           || data.image_url
+          || data.imageUrl
           || '';
 
         if (!videoUrl && !imageUrl) {
@@ -1198,7 +1853,7 @@
             normalized = normalized.slice(uploadsIndex + 'uploads/'.length);
           }
           if (!backendHttpBaseUrl) { return; }
-          if (action === 'record_video') {
+          if (action === 'start_recording' || action === 'record' || action === 'record_video' || inferMediaKind(action, fileName, filePath, videoUrl, imageUrl) === 'video') {
             videoUrl = backendHttpBaseUrl + '/uploads/' + normalized;
           } else {
             imageUrl = backendHttpBaseUrl + '/uploads/' + normalized;
@@ -1221,7 +1876,8 @@
         var hint = document.getElementById('cameraModalHint');
         if (title && deviceId) { title.textContent = 'Camera: ' + deviceId; }
         if (placeholder) { placeholder.style.display = 'none'; }
-        if (action === 'record_video') {
+        var mediaKind = inferMediaKind(action, fileName, filePath, videoUrl, imageUrl);
+        if (mediaKind === 'video') {
           if (hint) { hint.textContent = 'Recording ready. Download below.'; }
           setCameraModalVideo(videoUrl, fileName);
         } else {
@@ -1262,4 +1918,16 @@
 
   setTimeout(function () { initMap(); }, 1200);
   setInterval(function () { renderCards(); }, 10000);
+
+  /* Admin Interface Event Listeners */
+  if (window.electronAPI && typeof window.electronAPI.on === 'function') {
+    window.electronAPI.on('backend:event', function (_event, data) {
+      if (!data) return;
+      var type = String(data.type || '').trim();
+      if (type === 'admin:users' || type === 'admin:locations_latest' || type === 'admin:commands') {
+        console.log('[Panel] Admin data received:', type, data.payload);
+        window.dispatchEvent(new CustomEvent('piguard:admin-' + type, { detail: data.payload }));
+      }
+    });
+  }
 })();

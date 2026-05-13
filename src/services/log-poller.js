@@ -757,6 +757,31 @@ async function poll() {
       await processResponses(responsesData);
     }
 
+    // Fetch admin data endpoints
+    const usersData = await fetchWithAuth('/admin/users');
+    if (usersData) {
+      sendToRenderer('backend:event', {
+        type: 'admin:users',
+        payload: Array.isArray(usersData) ? usersData : (usersData.users || []),
+      });
+    }
+
+    const locationsData = await fetchWithAuth('/admin/locations/latest');
+    if (locationsData) {
+      sendToRenderer('backend:event', {
+        type: 'admin:locations_latest',
+        payload: Array.isArray(locationsData) ? locationsData : (locationsData.locations || []),
+      });
+    }
+
+    const commandsData = await fetchWithAuth('/admin/commands');
+    if (commandsData) {
+      sendToRenderer('backend:event', {
+        type: 'admin:commands',
+        payload: Array.isArray(commandsData) ? commandsData : (commandsData.commands || []),
+      });
+    }
+
     emitDevicesList();
   } catch (err) {
     emitActivityLog('poll_cycle_failed', buildSafeError(err), 'error');
