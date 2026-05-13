@@ -378,23 +378,183 @@
   const presenceHistoryEntries = [];
   const presenceStateByKey = new Map();
   const presenceLastLocationLoggedAt = new Map();
-  const panelLoadState = { gps: false, mobile: false, sms: false };
+  const panelLoadState = { gps: false, mobile: false, sms: false, 'mobile-recordings': false, 'mobile-images': false };
+
+  const mediaPanelConfig = {
+    'mobile-recordings': {
+      listId: 'mediaListMobileRecordings',
+      statusId: 'mediaStatusMobileRecordings',
+      countId: 'mediaCountMobileRecordings',
+      emptyLabel: 'No recorded videos available yet.',
+      kindLabel: 'videos',
+      fileTypeLabel: 'MP4',
+    },
+    'mobile-images': {
+      listId: 'mediaListMobileImages',
+      statusId: 'mediaStatusMobileImages',
+      countId: 'mediaCountMobileImages',
+      emptyLabel: 'No captured images available yet.',
+      kindLabel: 'images',
+      fileTypeLabel: 'JPG',
+    },
+  };
 
   function markPanelLoaded(panelKey) {
     if (!panelKey || panelLoadState[panelKey]) return;
     panelLoadState[panelKey] = true;
     const loader = panelKey === 'gps'
       ? gpsPanelLoaderEl
-      : (panelKey === 'mobile' ? mobilePanelLoaderEl : smsPanelLoaderEl);
+      : (panelKey === 'mobile'
+        ? mobilePanelLoaderEl
+        : (panelKey === 'mobile-recordings'
+          ? document.querySelector('[data-panel-loader="mobile-recordings"]')
+          : (panelKey === 'mobile-images'
+            ? document.querySelector('[data-panel-loader="mobile-images"]')
+            : smsPanelLoaderEl)));
     if (loader) {
       loader.classList.remove('is-visible');
+    }
+  }
+
+  function normalizeMediaRows(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object') return [];
+    const candidates = [payload.files, payload.items, payload.data, payload.media, payload.videos, payload.images];
+    for (const candidate of candidates) {
+      if (Array.isArray(candidate)) return candidate;
+    }
+    return [];
+  }
+
+  function getMediaName(row, index, fallbackType) {
+    const name = String(
+      row?.name || row?.file_name || row?.filename || row?.title || row?.label || row?.path || row?.file_path || row?.url || ''
+    ).trim();
+    if (name) return name;
+    const ext = fallbackType === 'videos' ? 'mp4' : 'jpg';
+    return `${fallbackType === 'videos' ? 'recording' : 'capture'}_${String(index + 1).padStart(2, '0')}.${ext}`;
+  }
+
+  function getMediaUrl(row) {
+    const raw = String(row?.url || row?.file_url || row?.download_url || row?.public_url || row?.path || row?.file_path || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw) || raw.startsWith('data:')) return raw;
+    if (typeof toAbsoluteBackendUrl === 'function') {
+      return toAbsoluteBackendUrl(raw);
+    }
+    return raw;
+  }
+
+  function getMediaMetaText(row) {
+    const size = row?.size || row?.file_size || row?.bytes || row?.content_length || '';
+    const timestamp = row?.created_at || row?.updated_at || row?.uploaded_at || row?.timestamp || row?.modified_at || '';
+    const sizeLabel = size ? `${size} bytes` : 'size unavailable';
+    const timeLabel = timestamp ? new Date(timestamp).toLocaleString() : 'timestamp unavailable';
+    return `${sizeLabel} • ${timeLabel}`;
+  }
+
+  async function fetchMediaRows(viewName) {
+    const config = mediaPanelConfig[viewName];
+    if (!config) return [];
+
+    const methodNames = config.kindLabel === 'videos'
+      ? ['getRecordedVideos', 'getRecordings', 'listRecordings', 'getMediaFiles']
+      : ['getCapturedImages', 'getSnapshots', 'listImages', 'getMediaFiles'];
+
+    const bridgeSources = [
+      backendApi && backendConnected ? backendApi : null,
+      piApi,
+      window.mediaBridge || null,
+    ].filter(Boolean);
+
+    for (const source of bridgeSources) {
+      for (const methodName of methodNames) {
+        if (typeof source[methodName] !== 'function') continue;
+        try {
+          const result = await source[methodName]({ kind: config.kindLabel });
+          const rows = normalizeMediaRows(result);
+          if (rows.length) return rows;
+        } catch (err) {
+          console.warn(`[Media] ${methodName} failed for ${viewName}:`, err && err.message ? err.message : err);
+        }
+      }
+    }
+
+    return [];
+  }
+
+  function renderMediaPanel(viewName, rows = [], statusText = '') {
+    const config = mediaPanelConfig[viewName];
+    if (!config) return;
+
+    const listEl = document.getElementById(config.listId);
+    const statusEl = document.getElementById(config.statusId);
+    const countEl = document.getElementById(config.countId);
+
+    if (statusEl) {
+      statusEl.textContent = statusText || `No ${config.kindLabel} source connected yet.`;
+    }
+    if (countEl) {
+      countEl.textContent = `${rows.length} file${rows.length === 1 ? '' : 's'}`;
+    }
+    if (!listEl) return;
+
+    if (!rows.length) {
+      listEl.innerHTML = `<div class="media-empty">${config.emptyLabel}</div>`;
+      return;
+    }
+
+    listEl.innerHTML = rows.map((row, index) => {
+      const name = escapeHtml(getMediaName(row, index, config.kindLabel));
+      const meta = escapeHtml(getMediaMetaText(row));
+      const url = getMediaUrl(row);
+      const typeLabel = escapeHtml(String(row?.type || row?.media_type || config.fileTypeLabel).toUpperCase());
+      const isVideo = config.kindLabel === 'videos';
+      const preview = url
+        ? (isVideo
+          ? `<video controls preload="metadata" src="${escapeHtml(url)}"></video>`
+          : `<img alt="${name}" src="${escapeHtml(url)}">`)
+        : `<div class="media-placeholder">${isVideo ? 'Video preview unavailable' : 'Image preview unavailable'}</div>`;
+
+      return `
+        <article class="media-item">
+          <div class="media-item-preview">${preview}</div>
+          <div class="media-item-body">
+            <div style="min-width:0;flex:1">
+              <div class="media-item-name">${name}</div>
+              <div class="media-item-meta">${meta}</div>
+            </div>
+            <div class="media-item-pill">${typeLabel}</div>
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  async function refreshMediaPanel(viewName) {
+    const config = mediaPanelConfig[viewName];
+    if (!config) return;
+
+    markPanelLoaded(viewName);
+
+    const listEl = document.getElementById(config.listId);
+    const statusEl = document.getElementById(config.statusId);
+    if (statusEl) statusEl.textContent = `Loading ${config.kindLabel}...`;
+    if (listEl && !listEl.children.length) {
+      listEl.innerHTML = '<div class="media-empty">Loading media files...</div>';
+    }
+
+    try {
+      const rows = await fetchMediaRows(viewName);
+      renderMediaPanel(viewName, rows, rows.length ? `Loaded ${rows.length} ${config.kindLabel}.` : `No ${config.kindLabel} found on the connected device.`);
+    } catch (err) {
+      renderMediaPanel(viewName, [], `Failed to load ${config.kindLabel}: ${err && err.message ? err.message : 'Unknown error'}`);
     }
   }
 
   if (presenceHistoryModalEl && presenceHistoryModalEl.parentElement !== document.body) {
     document.body.appendChild(presenceHistoryModalEl);
   }
-
   function refreshTrackingLogElements() {
     if (!trackingLogPanelEl || !trackingLogPanelEl.isConnected) {
       trackingLogPanelEl = document.getElementById('trackingLogPanel');
@@ -4538,6 +4698,12 @@
       syncCameraMedia();
     } else {
       stopCameraMedia();
+    }
+  };
+
+  window.onDashboardMediaChange = function (viewName) {
+    if (viewName === 'mobile-recordings' || viewName === 'mobile-images') {
+      void refreshMediaPanel(viewName);
     }
   };
 
