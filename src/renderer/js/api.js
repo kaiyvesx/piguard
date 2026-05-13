@@ -382,10 +382,10 @@
 
   const mediaPanelConfig = {
     'mobile-recordings': {
-      listId: 'mediaListMobileRecordings',
+      listId: 'recordingStorageList',
       statusId: 'mediaStatusMobileRecordings',
       countId: 'mediaCountMobileRecordings',
-      emptyLabel: 'No recorded videos available yet.',
+      emptyLabel: 'No files loaded yet.',
       kindLabel: 'videos',
       fileTypeLabel: 'MP4',
     },
@@ -398,6 +398,353 @@
       fileTypeLabel: 'JPG',
     },
   };
+
+  const RECORDING_STORAGE_KEY = 'piguard-recording-storage-v1';
+  const DEFAULT_RECORDING_FOLDER = 'captured_video';
+  const RECORDING_SORT_OPTIONS = new Set(['date', 'name', 'size']);
+  let recordingStorageEls = null;
+  let recordingStorageBound = false;
+  let recordingStorageSortKey = 'date';
+
+  function normalizeBearerToken(value) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return '';
+    return trimmed.replace(/^Bearer\s+/i, '').trim();
+  }
+
+  function readRecordingStorageConfig() {
+    try {
+      const raw = localStorage.getItem(RECORDING_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveRecordingStorageConfig(partial = {}) {
+    try {
+      const current = readRecordingStorageConfig();
+      localStorage.setItem(RECORDING_STORAGE_KEY, JSON.stringify({ ...current, ...partial }));
+    } catch {
+      // Ignore storage failures in restricted environments.
+    }
+  }
+
+  function getRecordingStorageSortKey() {
+    const saved = readRecordingStorageConfig();
+    const sortKey = String(saved.sortKey || recordingStorageSortKey || 'date').trim();
+    return RECORDING_SORT_OPTIONS.has(sortKey) ? sortKey : 'date';
+  }
+
+  function setRecordingStorageSortKey(sortKey) {
+    const nextSortKey = RECORDING_SORT_OPTIONS.has(sortKey) ? sortKey : 'date';
+    recordingStorageSortKey = nextSortKey;
+    saveRecordingStorageConfig({ sortKey: nextSortKey });
+    updateRecordingStorageSortButtons();
+  }
+
+  function updateRecordingStorageSortButtons() {
+    if (!recordingStorageEls || !recordingStorageEls.sortButtons) return;
+    const activeKey = getRecordingStorageSortKey();
+    recordingStorageEls.sortButtons.forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.sortKey === activeKey);
+    });
+  }
+
+  function formatBytes(size) {
+    const bytes = Number(size);
+    if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown size';
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    let value = bytes / 1024;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  function formatStorageDate(value) {
+    if (!value) return 'Unknown date';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+  }
+
+  function getRecordingFileTimestamp(file) {
+    const raw = file?.modified_at || file?.updated_at || file?.created_at || file?.uploaded_at || file?.timestamp || file?.date || file?.datetime || '';
+    const parsed = new Date(raw);
+    if (!raw || Number.isNaN(parsed.getTime())) return Number.NEGATIVE_INFINITY;
+    return parsed.getTime();
+  }
+
+  function getRecordingFileSize(file) {
+    const value = Number(file?.size || file?.file_size || file?.bytes || file?.content_length || 0);
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function getRecordingFileName(file, index) {
+    return String(file?.name || file?.file_name || file?.filename || file?.title || `recording_${index + 1}.mp4`).trim();
+  }
+
+  function sortRecordingStorageFiles(files) {
+    const sorted = [...(Array.isArray(files) ? files : [])];
+    const sortKey = getRecordingStorageSortKey();
+
+    sorted.sort((left, right) => {
+      if (sortKey === 'name') {
+        return getRecordingFileName(left, 0).localeCompare(getRecordingFileName(right, 0), undefined, { sensitivity: 'base', numeric: true });
+      }
+
+      if (sortKey === 'size') {
+        const sizeDiff = getRecordingFileSize(right) - getRecordingFileSize(left);
+        if (sizeDiff !== 0) return sizeDiff;
+        return getRecordingFileTimestamp(right) - getRecordingFileTimestamp(left);
+      }
+
+      const dateDiff = getRecordingFileTimestamp(right) - getRecordingFileTimestamp(left);
+      if (dateDiff !== 0) return dateDiff;
+      return getRecordingFileName(left, 0).localeCompare(getRecordingFileName(right, 0), undefined, { sensitivity: 'base', numeric: true });
+    });
+
+    return sorted;
+  }
+
+  function resolveStorageFileUrl(baseUrl, rawUrl) {
+    const url = String(rawUrl || '').trim();
+    const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+    if (!url) return '';
+    if (/^https?:\/\//i.test(url) || url.startsWith('data:')) return url;
+    if (!base) return url;
+    try {
+      return new URL(url.replace(/^\/+/, ''), `${base}/`).toString();
+    } catch {
+      return `${base}/${url.replace(/^\/+/, '')}`;
+    }
+  }
+
+  function normalizeAdminFilesPayload(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object') return [];
+    if (Array.isArray(payload.files)) return payload.files;
+    if (payload.data && Array.isArray(payload.data.files)) return payload.data.files;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.items)) return payload.items;
+    if (Array.isArray(payload.results)) return payload.results;
+    return [];
+  }
+
+  async function resolveRecordingStorageBackendBase() {
+    if (recordingStorageEls && recordingStorageEls.backendBase && recordingStorageEls.backendBase.value.trim()) {
+      return recordingStorageEls.backendBase.value.trim().replace(/\/+$/, '');
+    }
+
+    const saved = readRecordingStorageConfig();
+    if (saved.backendBase && String(saved.backendBase).trim()) {
+      return String(saved.backendBase).trim().replace(/\/+$/, '');
+    }
+
+    if (window.backendBridge && typeof window.backendBridge.getHttpBaseUrl === 'function') {
+      try {
+        const url = await window.backendBridge.getHttpBaseUrl();
+        if (url) return String(url).trim().replace(/\/+$/, '');
+      } catch {
+        // ignore
+      }
+    }
+
+    if (backendApi && typeof backendApi.getStatus === 'function') {
+      try {
+        const status = backendApi.getStatus();
+        if (status && status.serverUrl) return String(status.serverUrl).trim().replace(/\/+$/, '');
+      } catch {
+        // ignore
+      }
+    }
+
+    return '';
+  }
+
+  function getRecordingStorageFolder() {
+    return DEFAULT_RECORDING_FOLDER;
+  }
+
+  function getRecordingStorageToken() {
+    const liveValue = recordingStorageEls && recordingStorageEls.adminToken ? String(recordingStorageEls.adminToken.value || '').trim() : '';
+    if (liveValue) return normalizeBearerToken(liveValue);
+    const saved = readRecordingStorageConfig();
+    return normalizeBearerToken(saved.storageToken || saved.adminToken || '');
+  }
+
+  function ensureRecordingStorageElements() {
+    if (recordingStorageEls && recordingStorageEls.list && recordingStorageEls.list.isConnected) {
+      return recordingStorageEls;
+    }
+
+    const backendBase = document.getElementById('recordingStorageBackendBase');
+    const adminToken = document.getElementById('recordingStorageAdminToken');
+    const refreshBtn = document.getElementById('recordingStorageRefreshBtn');
+    const sortButtons = Array.from(document.querySelectorAll('[data-sort-key]'));
+    const list = document.getElementById('recordingStorageList');
+    const hint = document.getElementById('recordingStorageHint');
+
+    if (!backendBase || !adminToken || !refreshBtn || !list || !hint) {
+      return null;
+    }
+
+    recordingStorageEls = {
+      backendBase,
+      adminToken,
+      refreshBtn,
+      sortButtons,
+      list,
+      hint,
+    };
+
+    if (!recordingStorageBound) {
+      recordingStorageBound = true;
+      const saved = readRecordingStorageConfig();
+
+      backendBase.value = String(saved.backendBase || '').trim();
+      adminToken.value = String(saved.storageToken || saved.adminToken || '').trim();
+      recordingStorageSortKey = getRecordingStorageSortKey();
+
+      backendBase.addEventListener('change', () => {
+        saveRecordingStorageConfig({ backendBase: backendBase.value.trim() });
+      });
+
+      adminToken.addEventListener('change', () => {
+        saveRecordingStorageConfig({ storageToken: normalizeBearerToken(adminToken.value) });
+      });
+
+      refreshBtn.addEventListener('click', () => {
+        void refreshMediaPanel('mobile-recordings');
+      });
+
+      sortButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const sortKey = String(button.dataset.sortKey || '').trim();
+          if (!sortKey) return;
+          setRecordingStorageSortKey(sortKey);
+          void refreshMediaPanel('mobile-recordings');
+        });
+      });
+
+      [backendBase, adminToken].forEach((input) => {
+        input.addEventListener('keydown', (evt) => {
+          if (evt.key !== 'Enter') return;
+          evt.preventDefault();
+          void refreshMediaPanel('mobile-recordings');
+        });
+      });
+    }
+
+    return recordingStorageEls;
+  }
+
+  function renderRecordingStorageFiles(files, statusText = '', backendBase = '') {
+    const els = ensureRecordingStorageElements();
+    if (!els) return;
+
+    updateRecordingStorageSortButtons();
+    const safeFiles = sortRecordingStorageFiles(files);
+    const currentFolder = getRecordingStorageFolder();
+
+    els.hint.textContent = statusText || `Browsing ${currentFolder}.`;
+    if (mediaPanelConfig['mobile-recordings']?.countId) {
+      const countEl = document.getElementById(mediaPanelConfig['mobile-recordings'].countId);
+      if (countEl) countEl.textContent = `${safeFiles.length} file${safeFiles.length === 1 ? '' : 's'}`;
+    }
+
+    if (!safeFiles.length) {
+      els.list.innerHTML = '<div class="media-empty">No files found in this folder.</div>';
+      return;
+    }
+
+    els.list.innerHTML = safeFiles.map((file, index) => {
+      const name = getRecordingFileName(file, index);
+      const sizeText = formatBytes(file?.size || file?.file_size || file?.bytes || file?.content_length);
+      const dateText = formatStorageDate(file?.modified_at || file?.updated_at || file?.created_at || file?.uploaded_at || file?.timestamp);
+      const fileUrl = resolveStorageFileUrl(backendBase, file?.url || file?.file_url || file?.download_url || file?.public_url || file?.path || file?.file_path || '');
+
+      return `
+        <article class="storage-browser-item">
+          <div class="storage-browser-item-top">
+            <div style="min-width:0;flex:1">
+              <div class="storage-browser-item-name">${escapeHtml(name)}</div>
+              <div class="storage-browser-item-meta">${escapeHtml(sizeText)} · ${escapeHtml(dateText)}</div>
+            </div>
+            <span class="media-item-pill">MP4</span>
+          </div>
+          <div class="storage-browser-item-actions">
+            ${fileUrl ? `<a class="storage-browser-link" href="${escapeHtml(fileUrl)}" target="_blank" rel="noreferrer">Open</a>` : '<span class="storage-browser-link" style="opacity:.55;pointer-events:none">No link</span>'}
+          </div>
+        </article>
+      `;
+    }).join('');
+  }
+
+  async function refreshRecordingStorageBrowser() {
+    const els = ensureRecordingStorageElements();
+    if (!els) return;
+
+    markPanelLoaded('mobile-recordings');
+    els.hint.textContent = 'Loading storage browser...';
+
+    const backendBase = await resolveRecordingStorageBackendBase();
+    if (!backendBase) {
+      els.hint.textContent = 'Set a backend URL or connect to a backend bridge first.';
+      els.list.innerHTML = '<div class="media-empty">Backend URL is missing.</div>';
+      return;
+    }
+
+    const token = getRecordingStorageToken();
+    if (!token) {
+      els.hint.textContent = 'Storage token is required to list server files.';
+      els.list.innerHTML = '<div class="media-empty">Storage token is required.</div>';
+      return;
+    }
+
+    saveRecordingStorageConfig({
+      backendBase,
+      storageToken: token,
+    });
+
+    els.backendBase.value = backendBase;
+    els.adminToken.value = token;
+
+    const folder = getRecordingStorageFolder();
+    try {
+      const response = await fetch(`${backendBase}/api/admin/files?folder=${encodeURIComponent(folder)}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        const detail = payload && typeof payload === 'object' && payload.detail
+          ? String(payload.detail)
+          : `HTTP ${response.status}`;
+        throw new Error(detail);
+      }
+
+      const files = normalizeAdminFilesPayload(payload);
+      renderRecordingStorageFiles(files, files.length ? `Loaded ${files.length} file${files.length === 1 ? '' : 's'} from ${folder}.` : `No files found in ${folder}.`, backendBase);
+    } catch (err) {
+      els.hint.textContent = `Failed to load storage browser: ${err && err.message ? err.message : 'Unknown error'}`;
+      els.list.innerHTML = `<div class="media-empty">${escapeHtml(err && err.message ? err.message : 'Failed to load storage browser.')}</div>`;
+    }
+  }
 
   function markPanelLoaded(panelKey) {
     if (!panelKey || panelLoadState[panelKey]) return;
@@ -534,6 +881,11 @@
   async function refreshMediaPanel(viewName) {
     const config = mediaPanelConfig[viewName];
     if (!config) return;
+
+    if (viewName === 'mobile-recordings') {
+      await refreshRecordingStorageBrowser();
+      return;
+    }
 
     markPanelLoaded(viewName);
 
