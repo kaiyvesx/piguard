@@ -176,6 +176,7 @@ function ensureRecordingUi() {
     adminToken: section.querySelector("#recordingAdminToken"),
     refreshBtn: section.querySelector("#recordingRefreshBtn"),
     sendBtn: section.querySelector("#recordingSendBtn"),
+    snapshotBtn: section.querySelector("#recordingSnapshotBtn"),
     selectionSummary: section.querySelector("#recordingSelectionSummary"),
     uploadFeed: section.querySelector("#recordingUploadFeed"),
     storageFolder: section.querySelector("#recordingStorageFolder"),
@@ -189,6 +190,11 @@ function ensureRecordingUi() {
   recordingEls.backendBase.value = saved.backendBase || getBackendBaseUrl();
   recordingEls.adminToken.value = saved.adminToken || getAdminToken();
   recordingEls.durationSeconds.value = String(saved.durationSeconds || 15);
+  const savedMode = saved.recordingMode === "snapshot" ? "snapshot" : "record";
+  const modeInput = section.querySelector(`input[name="recording-mode"][value="${savedMode}"]`);
+  if (modeInput instanceof HTMLInputElement) {
+    modeInput.checked = true;
+  }
 
   recordingEls.storageBackendBase.value = recordingEls.backendBase.value;
   recordingEls.storageAdminToken.value = normalizeTokenValue(saved.storageAdminToken || saved.adminToken || getAdminToken());
@@ -221,6 +227,12 @@ function ensureRecordingUi() {
   recordingEls.sendBtn.addEventListener("click", () => {
     void submitRecordCommand();
   });
+
+  if (recordingEls.snapshotBtn instanceof HTMLButtonElement) {
+    recordingEls.snapshotBtn.addEventListener("click", () => {
+      void submitRecordCommand("snapshot");
+    });
+  }
 
   recordingEls.storageRefreshBtn.addEventListener("click", () => {
     void fetchStorageFiles();
@@ -293,6 +305,11 @@ function setSocketStatus(text, ok = null) {
 function getSelectedCamera() {
   const checked = document.querySelector('input[name="recording-camera"]:checked');
   return checked && checked instanceof HTMLInputElement ? checked.value : "front";
+}
+
+function getSelectedMode() {
+  const checked = document.querySelector('input[name="recording-mode"]:checked');
+  return checked && checked instanceof HTMLInputElement ? checked.value : "record";
 }
 
 function getSelectedDevice() {
@@ -369,7 +386,7 @@ function renderUploads() {
   els.uploadFeed.innerHTML = recordingState.uploads
     .map((item) => `
       <div class="activity-item">
-        <div><strong>${escapeHtml(item.device_name || item.device_id || item.socket_id)}</strong> · ${escapeHtml(item.camera || "camera")}</div>
+        <div><strong>${escapeHtml(item.device_name || item.device_id || item.socket_id)}</strong> · ${escapeHtml(item.mode || "record")} · ${escapeHtml(item.camera || "camera")}</div>
         <div class="muted">Duration: ${escapeHtml(String(item.duration || "n/a"))}s · ${escapeHtml(formatDate(item.uploaded_at))}</div>
         <div><a href="${escapeAttr(item.file_url)}" target="_blank" rel="noreferrer">Download / view file</a></div>
       </div>
@@ -443,7 +460,7 @@ async function refreshDevices() {
   }
 }
 
-async function submitRecordCommand() {
+async function submitRecordCommand(forceMode = null) {
   const selected = getSelectedDevice();
   const els = ensureRecordingUi();
   if (!selected) {
@@ -455,7 +472,15 @@ async function submitRecordCommand() {
   const token = getAdminToken();
   const duration = Math.max(1, Math.min(600, Number(els.durationSeconds.value) || 15));
   const camera = getSelectedCamera();
-  saveLocalConfig({ backendBase, adminToken: token, durationSeconds: duration });
+  const mode = forceMode || getSelectedMode();
+  saveLocalConfig({ backendBase, adminToken: token, durationSeconds: duration, recordingMode: mode });
+
+  if (forceMode === "snapshot") {
+    const snapshotModeInput = document.querySelector('input[name="recording-mode"][value="snapshot"]');
+    if (snapshotModeInput instanceof HTMLInputElement) {
+      snapshotModeInput.checked = true;
+    }
+  }
 
   try {
     const headers = {
@@ -465,7 +490,7 @@ async function submitRecordCommand() {
     const result = await fetchJson(`${backendBase}/api/record`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ socket_id: selected.socket_id, camera, duration }),
+      body: JSON.stringify({ socket_id: selected.socket_id, camera, mode, duration }),
     });
 
     if (!result.ok) {
@@ -473,7 +498,7 @@ async function submitRecordCommand() {
       return;
     }
 
-    els.selectionSummary.textContent = `Recording request queued for ${selected.device_name || selected.device_id || selected.socket_id}.`;
+    els.selectionSummary.textContent = `${mode === "snapshot" ? "Snapshot" : "Recording"} request queued for ${selected.device_name || selected.device_id || selected.socket_id}.`;
   } catch (error) {
     els.selectionSummary.textContent = `Command error: ${error.message || error}`;
   }
@@ -556,6 +581,7 @@ async function connectRecordingSocket() {
         device_name: payload?.device_name || payload?.deviceName || "",
         file_url: payload?.file_url || payload?.fileUrl || "",
         camera: payload?.camera || "",
+        mode: payload?.mode || "record",
         duration: payload?.duration || "",
         path: payload?.path || "",
         bucket: payload?.bucket || "recordings",

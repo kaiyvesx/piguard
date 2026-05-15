@@ -4,14 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Raspi Connection Monitor</title>
-    <link rel="stylesheet" href="./styles (1).css" />
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="container">
       <nav class="top-nav">
-        <a class="nav-link active" href="./index (1).html">Raspberry Monitor</a>
-        <a class="nav-link" href="./phone-admin (1).html">Phone Admin Monitor</a>
-        <a class="nav-link" href="./camera-admin (1).html">Camera Admin Monitor</a>
+        <a class="nav-link active" href="./index.html">Raspberry Monitor</a>
+        <a class="nav-link" href="./phone-admin.html">Phone Admin Monitor</a>
+        <a class="nav-link" href="./camera-admin.html">Camera Admin Monitor</a>
+        <a class="nav-link" href="./map-tracking.html">Map Tracking</a>
       </nav>
 
       <h1>Raspberry Pi Monitor</h1>
@@ -102,6 +103,13 @@
               <h3>Recording Controls</h3>
               <div class="grid">
                 <label>
+                  Command Type
+                  <div class="row">
+                    <label class="check-pill"><input type="radio" name="recording-mode" value="record" checked /> Record</label>
+                    <label class="check-pill"><input type="radio" name="recording-mode" value="snapshot" /> Snapshot</label>
+                  </div>
+                </label>
+                <label>
                   Camera Side
                   <div class="row">
                     <label class="check-pill"><input type="radio" name="recording-camera" value="front" checked /> Front</label>
@@ -124,6 +132,7 @@
               <div class="row">
                 <button id="recordingRefreshBtn">Refresh Devices</button>
                 <button id="recordingSendBtn">Send Record Command</button>
+                <button id="recordingSnapshotBtn">Take Snapshot</button>
               </div>
               <p id="recordingSelectionSummary" class="summary-text">Select a connected device to queue a recording.</p>
             </section>
@@ -169,6 +178,6 @@
     </main>
 
     <script src="./script.js"></script>
-    <script src="./admin_recording (1).js"></script>
+    <script src="./admin_recording.js"></script>
   </body>
 </html>

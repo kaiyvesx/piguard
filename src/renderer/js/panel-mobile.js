@@ -1142,8 +1142,8 @@
 
     var capture = document.createElement('button');
     capture.id = 'cameraModalCapture';
-    capture.textContent = 'Send Capture Command';
-    send.style.background = '#0077ff';
+    capture.textContent = 'Take Snapshot';
+    capture.style.background = '#0077ff';
     capture.style.color = '#031a2f';
     capture.style.border = '1px solid rgba(122, 232, 255, 0.35)';
     capture.style.padding = '8px 12px';
@@ -1712,9 +1712,6 @@
   function sendCaptureCommand(deviceId) {
     var targetId = String(deviceId || '').trim();
     if (!targetId) return;
-    if (!window.electronAPI || typeof window.electronAPI.invoke !== 'function') {
-      return;
-    }
     var device = devices.get(targetId) || null;
     var targetUserId = device && device.userId ? String(device.userId).trim() : '';
     var facing = 'front';
@@ -1723,28 +1720,125 @@
       facing = String(facingSelect.value || 'front');
     }
     var placeholder = document.getElementById('cameraPlaceholder');
+    var summaryState = document.getElementById('cameraModalSummaryState');
     if (placeholder) {
-      placeholder.textContent = 'Sending capture command...';
+      placeholder.textContent = 'Sending snapshot command...';
+    }
+    if (summaryState) {
+      summaryState.textContent = 'Sending snapshot';
     }
     setCameraModalImage('');
-    window.electronAPI.invoke('send-command', targetUserId ? { userId: targetUserId, deviceId: targetId } : targetId, 'take_photo', {
-      camera: facing,
-      facing: facing,
-      quality: 0.9,
-      source: 'mobile-panel'
-    }).then(function (result) {
-      if (!placeholder) return;
-      if (result && result.success && result.data && result.data.queued) {
-        placeholder.textContent = 'Capture command queued by backend. If mobile is currently active, wait a few seconds for the response.';
-      } else {
-        placeholder.textContent = 'Capture command sent. Waiting for image payload...';
-      }
-    }).catch(function (err) {
+
+    function onSnapshotQueued(result, resolvedName) {
       if (placeholder) {
-        placeholder.textContent = 'Failed to request capture: ' + (err && err.message ? err.message : err);
+        placeholder.textContent = 'Snapshot request sent to ' + resolvedName + '. Waiting for upload...';
       }
-      console.warn('[Panel] Failed to send take_photo:', err && err.message ? err.message : err);
-    });
+      if (summaryState) {
+        summaryState.textContent = 'Waiting for upload';
+      }
+      console.log('[Panel] Snapshot command sent', result);
+    }
+
+    function onSnapshotError(err) {
+      var message = err && err.message ? String(err.message) : String(err || '');
+      if (placeholder) {
+        placeholder.textContent = 'Failed to request snapshot: ' + message;
+      }
+      if (summaryState) {
+        summaryState.textContent = 'Error';
+      }
+      console.warn('[Panel] Failed to send snapshot command:', message);
+    }
+
+    if (window.backendBridge && typeof window.backendBridge.sendRecordCommand === 'function') {
+      window.backendBridge.sendRecordCommand(
+        targetUserId ? { userId: targetUserId, deviceId: targetId } : { deviceId: targetId },
+        { camera: facing, duration: 1, mode: 'snapshot' }
+      ).then(function (result) {
+        if (result && result.ok) {
+          onSnapshotQueued(result, result.device_name || result.device_id || targetId);
+          return;
+        }
+        throw new Error((result && result.message) ? String(result.message) : 'Snapshot request rejected');
+      }).catch(onSnapshotError);
+      return;
+    }
+
+    if (backendHttpBaseUrl) {
+      var devicesUrl = backendHttpBaseUrl + '/api/devices';
+      var recordUrl = backendHttpBaseUrl + '/api/record';
+      var token = 'C9EQlRRiBTWUCltF6yGBKIT0NXuW3OgZ';
+      fetch(devicesUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        }
+      }).then(function (response) {
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+        }
+        return response.json();
+      }).then(function (payload) {
+        var rows = Array.isArray(payload) ? payload : (payload && Array.isArray(payload.devices) ? payload.devices : []);
+        var chosen = null;
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i] || {};
+          var rowDeviceId = String(row.device_id || '').trim();
+          if (rowDeviceId === targetId) {
+            chosen = row;
+            break;
+          }
+        }
+        if (!chosen && targetUserId) {
+          var userMatches = [];
+          for (var j = 0; j < rows.length; j++) {
+            var userRow = rows[j] || {};
+            var rowUserId = String(userRow.user_id || '').trim();
+            if (rowUserId === targetUserId) {
+              userMatches.push(userRow);
+            }
+          }
+          if (userMatches.length === 1) {
+            chosen = userMatches[0];
+          }
+        }
+        if (!chosen || !chosen.socket_id) {
+          throw new Error('No connected snapshot socket found for this device');
+        }
+        return fetch(recordUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+          },
+          body: JSON.stringify({
+            socket_id: String(chosen.socket_id),
+            camera: facing,
+            duration: 1,
+            mode: 'snapshot'
+          })
+        }).then(function (response) {
+          if (!response.ok) {
+            throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+          }
+          return response.json().then(function (data) {
+            return { data: data, chosen: chosen };
+          });
+        });
+      }).then(function (result) {
+        var data = result && result.data;
+        var chosen = result && result.chosen;
+        if (data && (data.ok !== false)) {
+          onSnapshotQueued(data, (chosen && (chosen.device_name || chosen.device_id)) || targetId);
+        } else {
+          throw new Error((data && (data.message || JSON.stringify(data))) || 'Unknown');
+        }
+      }).catch(onSnapshotError);
+      return;
+    }
+
+    onSnapshotError(new Error('No backend bridge or backend URL configured'));
   }
 
   function closeCameraModal() {

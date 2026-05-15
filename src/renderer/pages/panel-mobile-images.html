@@ -22,6 +22,35 @@
       <div class="media-panel-count" id="mediaCountMobileImages">0 files</div>
     </header>
 
+    <section class="storage-browser-card">
+      <div class="storage-browser-grid">
+        <div class="storage-browser-field">
+          <span class="storage-browser-label">Folder</span>
+          <input type="text" value="captured_img" disabled />
+        </div>
+        <label class="storage-browser-field">
+          <span class="storage-browser-label">Backend URL</span>
+          <input id="snapshotStorageBackendBase" type="text" placeholder="http://127.0.0.1:8000" />
+        </label>
+        <label class="storage-browser-field">
+          <span class="storage-browser-label">Storage Token</span>
+          <input id="snapshotStorageAdminToken" type="password" placeholder="Required for /api/admin/files" />
+        </label>
+      </div>
+
+      <div class="storage-browser-toolbar">
+        <div class="storage-browser-toolbar-actions">
+          <div class="storage-browser-sort-group" role="group" aria-label="Sort snapshots">
+            <button type="button" class="storage-browser-sort is-active" data-sort-key="date">Date</button>
+            <button type="button" class="storage-browser-sort" data-sort-key="name">A-Z</button>
+            <button type="button" class="storage-browser-sort" data-sort-key="size">File Size</button>
+          </div>
+          <button type="button" class="storage-browser-refresh" id="snapshotStorageRefreshBtn">Refresh Storage</button>
+        </div>
+        <div class="storage-browser-hint" id="snapshotStorageHint">No files loaded yet.</div>
+      </div>
+    </section>
+
     <div class="media-panel-list" id="mediaListMobileImages">
       <div class="media-empty">No captured images available yet.</div>
     </div>
