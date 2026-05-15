@@ -68,7 +68,7 @@
     var stroke = isOnline ? '#ffffff' : 'rgba(255,255,255,0.78)';
     var glow = isOnline ? '0 0 18px rgba(0, 170, 255, 0.42)' : '0 0 14px rgba(255, 78, 104, 0.28)';
     var html = ''
-      + '<div style="width:34px;height:34px;position:relative;transform:translate(-50%, -100%);filter:' + glow + ';">'
+      + '<div style="width:34px;height:46px;position:relative;display:block;filter:' + glow + ';">'
       +   '<svg viewBox="0 0 34 46" width="34" height="46" style="display:block;overflow:visible">'
       +     '<path d="M17 1.5c-8.6 0-15.5 6.7-15.5 15 0 11.5 15.5 28 15.5 28s15.5-16.5 15.5-28c0-8.3-6.9-15-15.5-15z" fill="' + color + '" stroke="' + stroke + '" stroke-width="2.2"/>'
       +     '<circle cx="17" cy="17" r="7.3" fill="rgba(3, 13, 27, 0.95)" stroke="' + stroke + '" stroke-width="2"/>'
