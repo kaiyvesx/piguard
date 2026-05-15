@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Map Tracking - Admin</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+      #map { height: 60vh; width: 100%; }
+      .panel { display:flex; gap:12px; }
+      .sidebar { width: 320px; max-height: 60vh; overflow:auto; }
+      .list-item { cursor:pointer; padding:6px; border-bottom:1px solid #eee; }
+      .list-item:hover { background:#f5f5f5; }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <nav class="top-nav">
+        <a class="nav-link" href="./index.html">Raspberry Monitor</a>
+        <a class="nav-link" href="./phone-admin.html">Phone Admin Monitor</a>
+        <a class="nav-link" href="./camera-admin.html">Camera Admin Monitor</a>
+        <a class="nav-link active" href="./map-tracking.html">Map Tracking</a>
+      </nav>
+
+      <h1>Map Tracking</h1>
+      <p class="subtitle">Browse captured location sessions and visualize them on the map.</p>
+
+      <section class="card panel">
+        <div class="sidebar card">
+          <h3>Users</h3>
+          <div id="userList"></div>
+          <h3>Sessions</h3>
+          <div id="sessionList"></div>
+        </div>
+
+        <div style="flex:1">
+          <div id="map"></div>
+          <div style="margin-top:8px">
+            <button id="fitBtn">Fit to Data</button>
+            <button id="clearBtn">Clear</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="./map-tracking.js"></script>
+  </body>
+</html>

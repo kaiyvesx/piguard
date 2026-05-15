@@ -95,7 +95,12 @@ function createWindow() {
 let backendProc = null;
 function startBundledBackend() {
   try {
-    const isPackaged = app.isPackaged === true;
+    // Packaged installs should use the configured remote backend endpoint.
+    if (app.isPackaged) {
+      console.log('[Main] Packaged install using configured backend endpoints');
+      return;
+    }
+
     const exeName = process.platform === 'win32' ? 'piguard-backend.exe' : 'piguard-backend';
 
     // When packaged, resources are located in process.resourcesPath

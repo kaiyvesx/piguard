@@ -546,6 +546,7 @@ class BackendApiService {
 
   async sendRecordCommand(target = {}, options = {}) {
     const desiredCamera = String(options.camera || 'front').trim().toLowerCase() === 'back' ? 'back' : 'front';
+    const desiredMode = String(options.mode || 'record').trim().toLowerCase() === 'snapshot' ? 'snapshot' : 'record';
     const durationRaw = Number(options.duration);
     const duration = Number.isFinite(durationRaw)
       ? Math.max(1, Math.min(600, Math.round(durationRaw)))
@@ -566,6 +567,7 @@ class BackendApiService {
       socket_id: socketId,
       camera: desiredCamera,
       duration,
+      mode: desiredMode,
     });
 
     return {
@@ -575,6 +577,7 @@ class BackendApiService {
       device_name: String(device.device_name || '').trim() || null,
       camera: desiredCamera,
       duration,
+      mode: desiredMode,
       response: payload,
     };
   }

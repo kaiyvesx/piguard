@@ -29,19 +29,13 @@
       "**/*",
       "!node_modules/electron/**/*"
     ],
-    "extraResources": [
-      {
-        "from": "build/resources/backend/",
-        "to": "backend/",
-        "filter": ["**/*"]
-      }
-    ],
     "directories": {
       "buildResources": "build",
       "output": "dist"
     },
     "win": {
-      "target": ["nsis", "zip"]
+      "target": ["nsis", "zip"],
+      "signAndEditExecutable": false
     }
   }
 }
